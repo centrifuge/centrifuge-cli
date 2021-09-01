@@ -8,6 +8,15 @@
     "references": [
         {
             "path": "../plugins/chain"
+        },
+        {
+            "path": "../plugins/migration"
+        },
+        {
+            "path": "../plugins/grant"
+        },
+        {
+            "path": "../plugins/crowdloan"
         }
     ],
     "include": [
