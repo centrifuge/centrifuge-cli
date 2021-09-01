@@ -1,0 +1,10 @@
+.idea/
+node_modules/
+**/node_modules/
+.node_modules/
+**/dist/
+yarn.lock
+**/yarn-error.log
+yarn-error.log
+tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo

@@ -1,0 +1,34 @@
+{
+    "compilerOptions": {
+        "baseUrl": "./packages",
+        "paths": {
+            "@centrifuge-cli/core/*": [
+                "libs/core/src/*"
+            ],
+            "@centrifuge-cli/plugin-chain/*": [
+                "plugins/chain/src/*"
+            ],
+            "@centrifuge-cli/cli/*": [
+                "cli/src/*"
+            ]
+        }
+    },
+    "files": [],
+    "references": [
+        {
+            "path": "packages/cli"
+        },
+        {
+            "path": "packages/libs/core"
+        },
+        {
+            "path": "packages/libs/dispatcher"
+        },
+        {
+            "path": "packages/libs/sp-state-fetch"
+        },
+        {
+            "path": "packages/plugins/chain"
+        }
+    ]
+}
