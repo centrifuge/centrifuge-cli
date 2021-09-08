@@ -1,0 +1,36 @@
+{
+  "crowdloans": [
+    {
+      "paraId": 2088,
+      "trieIndex": 31,
+      "createBlock": 9006286,
+      "endBlock": 9676800
+    },
+    {
+      "paraId": 2021,
+      "trieIndex": 13,
+      "createBlock": 8140382,
+      "endBlock": 8467200
+    }
+  ],
+  "claimPallet": {
+    "locketAt": 9999,
+    "index": 31,
+    "leaseStart": 9676800,
+    "leasePeriod": 100000
+  },
+  "rewardPallet": {
+    "directPayoutRatio": 20,
+    "vestingStart": 9676800,
+    "vestingPeriod": 80000
+  },
+  "transformation": {
+    "decimalDifference": 1000000,
+    "conversionRate": 400,
+    "earlyBirdPrct": 10,
+    "earlyBirdBlock": 9006286,
+    "earlyHourPrct": 5,
+    "referralUsedPrct": 5,
+    "referedPrct": 5
+  }
+}

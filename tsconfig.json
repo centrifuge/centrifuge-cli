@@ -5,6 +5,15 @@
             "@centrifuge-cli/core/*": [
                 "libs/core/src/*"
             ],
+            "@centrifuge-cli/util/*": [
+                "libs/util/src/*"
+            ],
+            "@centrifuge-cli/sp-state-fetch/*": [
+                "libs/sp-state-fetch/src/*"
+            ],
+            "@centrifuge-cli/dispatcher/*": [
+                "libs/dispatcher/src/*"
+            ],
             "@centrifuge-cli/plugin-chain/*": [
                 "plugins/chain/src/*"
             ],
@@ -35,6 +44,9 @@
         },
         {
             "path": "packages/libs/sp-state-fetch"
+        },
+        {
+            "path": "packages/libs/util"
         },
         {
             "path": "packages/plugins/chain"
