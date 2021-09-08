@@ -31,7 +31,6 @@
     "@centrifuge-cli/plugin-chain": "0.1.0",
     "@centrifuge-cli/plugin-migration": "0.1.0",
     "@centrifuge-cli/plugin-grant": "0.1.0",
-    "@centrifuge-cli/plugin-crowdloan": "0.1.0",
     "@oclif/config": "^1",
     "@oclif/plugin-commands": "^1.3.0",
     "@oclif/plugin-help": "^3",
@@ -54,7 +53,6 @@
       "@oclif/plugin-help",
       "@oclif/plugin-commands",
       "@centrifuge-cli/plugin-chain",
-      "@centrifuge-cli/plugin-crowdloan",
       "@centrifuge-cli/plugin-grant",
       "@centrifuge-cli/plugin-migration"
     ]

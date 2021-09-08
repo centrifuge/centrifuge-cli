@@ -17,9 +17,6 @@
             "@centrifuge-cli/plugin-chain/*": [
                 "plugins/chain/src/*"
             ],
-            "@centrifuge-cli/plugin-crowdloan/*": [
-                "plugins/crowdloan/src/*"
-            ],
             "@centrifuge-cli/plugin-grant/*": [
                 "plugins/grant/src/*"
             ],
@@ -50,9 +47,6 @@
         },
         {
             "path": "packages/plugins/chain"
-        },
-        {
-            "path": "packages/plugins/crowdloan"
         },
         {
             "path": "packages/plugins/grant"
