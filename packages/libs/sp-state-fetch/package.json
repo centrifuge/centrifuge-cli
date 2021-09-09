@@ -1,0 +1,26 @@
+{
+  "name": "@centrifuge-cli/sp-state-fetch",
+  "version": "0.1.0",
+  "license": "Apache-2",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "directory": "packages/libs/sp-state-fetch",
+    "url": "https://github.com/centrifuge/centrifuge-cli.git"
+  },
+  "scripts": {
+    "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
+    "prepack": "yarn build",
+    "build": "yarn clean && yarn compile",
+    "compile": "tsc --build && cp \"./package.json\" ./dist/",
+    "test": "echo 'no test'",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0"
+  },
+  "dependencies": {
+    "@polkadot/api": "^4.16.2",
+    "@polkadot/types": "^4.16.2",
+    "@centrifuge-cli/core": "0.1.0",
+    "@centrifuge-cli/util": "0.1.0"
+  }
+}

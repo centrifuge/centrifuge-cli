@@ -1,0 +1,65 @@
+{
+  "name": "@centrifuge-cli/cli",
+  "description": "Centrifuge-cli tool. Allows to interact with different components of the centrifuge infrastructure and provides different tools as plugins.",
+  "version": "0.0.1",
+  "author": "admin@centrifuge.io",
+  "bugs": "https://github.com/centrifuge/centrifuge-cli/issues",
+  "bin": {
+    "centrifuge": "./bin/run"
+  },
+  "license": "Apache-2",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "directory": "packages/cli",
+    "url": "https://github.com/centrifuge/centrifuge-cli.git"
+  },
+  "engines": {
+  "node": ">=8.0.0"
+  },
+  "scripts": {
+    "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
+    "prepack": "yarn build",
+    "build": "yarn clean && yarn compile",
+    "compile": "tsc --build && cp \"./package.json\" ./dist/",
+    "test": "echo 'no test'",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0"
+  },
+  "dependencies": {
+    "@oclif/command": "^1.8.0",
+    "@centrifuge-cli/plugin-chain": "0.1.0",
+    "@centrifuge-cli/plugin-migration": "0.1.0",
+    "@centrifuge-cli/plugin-grant": "0.1.0",
+    "@oclif/config": "^1",
+    "@oclif/plugin-commands": "^1.3.0",
+    "@oclif/plugin-help": "^3",
+    "tslib": "^1"
+  },
+  "devDependencies": {
+    "@oclif/dev-cli": "^1",
+    "@types/node": "^10",
+    "eslint": "^5.13",
+    "eslint-config-oclif": "^3.1",
+    "eslint-config-oclif-typescript": "^0.1",
+    "globby": "^10",
+    "ts-node": "^8",
+    "typescript": "^3.3"
+  },
+  "oclif": {
+    "commands": "./dist/commands",
+    "bin": "centrifuge",
+    "plugins": [
+      "@oclif/plugin-help",
+      "@oclif/plugin-commands",
+      "@centrifuge-cli/plugin-chain",
+      "@centrifuge-cli/plugin-grant",
+      "@centrifuge-cli/plugin-migration"
+    ]
+  },
+  "files": [
+    "/dist",
+    "/oclif.manifest.json",
+    "/yarn.lock"
+  ]
+}
