@@ -19,7 +19,7 @@ export async function createDefaultChildStorageKey(api: ApiPromise, levels: Arra
     let key = "0x" + await hexEncode(":child_storage:default:");
 
     for (const level of levels){
-        key.concat(await hash(level[0], level[1]));
+        key = key.concat(await hash(level[0], level[1]));
     }
 
     return api.createType("StorageKey", key);
@@ -29,7 +29,7 @@ export async function createStorageKey(api: ApiPromise, levels: Array<[string | 
     let key = "0x";
 
     for (const level of levels){
-        key.concat(await hash(level[0], level[1]));
+        key = key.concat(await hash(level[0], level[1]));
     }
 
     return api.createType("StorageKey", key);

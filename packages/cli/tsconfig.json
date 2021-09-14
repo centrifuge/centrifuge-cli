@@ -14,6 +14,9 @@
         },
         {
             "path": "../plugins/grant"
+        },
+        {
+            "path": "../plugins/crowdloan"
         }
     ],
     "include": [
