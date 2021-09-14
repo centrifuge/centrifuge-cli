@@ -25,11 +25,12 @@
     "@oclif/command": "^1.8.0",
     "@polkadot/api": "^4.16.2",
     "@polkadot/types": "^4.16.2",
-    "@centrifuge-cli/core": "0.1.0"
+    "@centrifuge-cli/core": "0.1.0",
+    "@centrifuge-cli/dispatcher": "0.1.0"
   },
   "oclif": {
     "commands": "./dist/commands",
-    "bin": "chain",
+    "bin": "migration",
     "plugins": [
       "@oclif/plugin-help"
     ]

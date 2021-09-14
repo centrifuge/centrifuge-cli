@@ -8,6 +8,9 @@
     "references": [
         {
             "path": "../../libs/core"
+        },
+        {
+            "path": "../../libs/dispatcher"
         }
     ],
     "include": [
