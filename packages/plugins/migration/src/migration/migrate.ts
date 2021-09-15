@@ -9,11 +9,19 @@ import {fork} from "../migration/fork";
 import {compactAddLength} from "@polkadot/util"
 import {Dispatcher} from "@centrifuge-cli/dispatcher/dist/dispatcher";
 
-export async function verifyMigration(toApi: ApiPromise, fromApi: ApiPromise, storageItems: Array<StorageElement>, atTo: Hash, startFrom: Hash, atFrom: Hash): Promise<Array<[StorageKey,  Uint8Array]>> {
+export async function verifyMigration(
+    toApi: ApiPromise,
+    fromApi: ApiPromise,
+    storageItems: Array<StorageElement>,
+    startTo: Hash,
+    atTo: Hash,
+    startFrom: Hash,
+    atFrom: Hash
+): Promise<Array<[StorageKey,  Uint8Array]>> {
     const forkDataOld = await fork(fromApi, storageItems, atFrom);
     const forkDataNew = await fork(toApi, storageItems, atTo);
 
-    const toAsNum = (await toApi.rpc.chain.getBlock(atTo)).block.header.number.toBigInt();
+    const startToAsNum = (await toApi.rpc.chain.getBlock(startTo)).block.header.number.toBigInt();
     const startFromAsNum = (await fromApi.rpc.chain.getBlock(startFrom)).block.header.number.toBigInt();
 
     let failedVerification= new Array();
@@ -38,12 +46,12 @@ export async function verifyMigration(toApi: ApiPromise, fromApi: ApiPromise, st
                     failedVerification.push(...failed);
                 }
             } else if (key === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)){
-                let failed = await verifyBalanceTotalIssuance(oldData, fromApi, newData, toApi);
+                let failed = await verifyBalanceTotalIssuance(oldData, fromApi, newData, toApi, startToAsNum);
                 if(failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
             } else if (key === xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2)){
-                let failed = await verifyVestingVesting(oldData, fromApi, newData, toApi, startFromAsNum, toAsNum);
+                let failed = await verifyVestingVesting(oldData, fromApi, newData, toApi, startFromAsNum, startToAsNum);
                 if(failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
@@ -62,7 +70,12 @@ export async function verifyMigration(toApi: ApiPromise, fromApi: ApiPromise, st
     return failedVerification;
 }
 
-async function verifySystemAccount(oldData: Array<[StorageKey, Uint8Array]>, oldApi: ApiPromise, newData: Array<[StorageKey, Uint8Array]>, newApi: ApiPromise): Promise<Array<[StorageKey, Uint8Array]>> {
+async function verifySystemAccount(
+    oldData: Array<[StorageKey, Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey, Uint8Array]>,
+    newApi: ApiPromise
+): Promise<Array<[StorageKey, Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -78,9 +91,11 @@ async function verifySystemAccount(oldData: Array<[StorageKey, Uint8Array]>, old
 
         let newScale = newDataMap.get(key.toHex());
         if (newScale !== undefined) {
-            let newAccount = oldApi.createType('AccountInfo', compactAddLength(newScale));
+            let newAccount = newApi.createType('AccountInfo', newScale);
 
-            if (oldAccount.data.free.toBigInt() + oldAccount.data.reserved.toBigInt() !== newAccount.data.free.toBigInt()) {
+            if (oldAccount.data.free.toBigInt() + oldAccount.data.reserved.toBigInt()
+                !== newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt())
+            {
                 failed.push([key, value]);
             }
 
@@ -94,7 +109,13 @@ async function verifySystemAccount(oldData: Array<[StorageKey, Uint8Array]>, old
     return failed;
 }
 
-async function verifyBalanceTotalIssuance(oldData: Array<[StorageKey,  Uint8Array]>, oldApi: ApiPromise, newData: Array<[StorageKey,  Uint8Array]>, newApi: ApiPromise): Promise<Array<[StorageKey,  Uint8Array]>> {
+async function verifyBalanceTotalIssuance(
+    oldData: Array<[StorageKey,  Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey,  Uint8Array]>,
+    newApi: ApiPromise,
+    migrationStartBlock: bigint
+): Promise<Array<[StorageKey,  Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -110,9 +131,14 @@ async function verifyBalanceTotalIssuance(oldData: Array<[StorageKey,  Uint8Arra
 
         let newScale = newDataMap.get(key.toHex());
         if (newScale !== undefined) {
-            let newIssuance = oldApi.createType('Balance', compactAddLength(newScale));
+            let issuanceBeforeMigrationStorage
+                = await newApi.rpc.state.getStorage(key.toHex(), await newApi.rpc.chain.getBlockHash(migrationStartBlock - BigInt(1)));
 
-            if (oldIssuance.toBigInt() > newIssuance.toBigInt()) {
+            //@ts-ignore
+            let issuanceBeforeMigration = newApi.createType('Balance', issuanceBeforeMigrationStorage.toU8a(true));
+            let newIssuance = newApi.createType('Balance', newScale);
+
+            if (oldIssuance.toBigInt() !== newIssuance.toBigInt() - issuanceBeforeMigration.toBigInt()) {
                 failed.push([key, value]);
             }
 
@@ -126,7 +152,12 @@ async function verifyBalanceTotalIssuance(oldData: Array<[StorageKey,  Uint8Arra
     return failed;
 }
 
-async function verifyProxyProxies(oldData: Array<[StorageKey,  Uint8Array]>, oldApi: ApiPromise, newData: Array<[StorageKey,  Uint8Array]>, newApi: ApiPromise): Promise<Array<[StorageKey,  Uint8Array]>> {
+async function verifyProxyProxies(
+    oldData: Array<[StorageKey,  Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey,  Uint8Array]>,
+    newApi: ApiPromise
+): Promise<Array<[StorageKey,  Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -139,12 +170,12 @@ async function verifyProxyProxies(oldData: Array<[StorageKey,  Uint8Array]>, old
         process.stdout.write("    Verifying:    "+ checked +"/ \r");
 
         // @ts-ignore
-        let oldProxyInfo = oldApi.createType('(Vec<(AccountId, ProxyType)>, Balance)', compactAddLength(value));
+        let oldProxyInfo = oldApi.createType('(Vec<(AccountId, ProxyType)>, Balance)', value);
 
         let newScale = newDataMap.get(key.toHex());
         if (newScale !== undefined) {
             // @ts-ignore
-            let newProxyInfo = newApi.createType('(Vec<ProxyDefinition<AccountId, ProxyType, BlockNumber>>, Balance)', compactAddLength(newScale));
+            let newProxyInfo = newApi.createType('(Vec<ProxyDefinition<AccountId, ProxyType, BlockNumber>>, Balance)', newScale);
 
             // @ts-ignore
             if (oldProxyInfo[0][0].length === newProxyInfo[0][0].length
@@ -168,10 +199,12 @@ async function verifyProxyProxies(oldData: Array<[StorageKey,  Uint8Array]>, old
                     }
 
                     if (!found){
+                        console.log("ERROR: Could not find delegate for migrated proxy. Missing " + oldAccount);
                         failed.push([key, value]);
                     }
                 }
             } else {
+                console.log("ERROR: Migrated ProdyInfo is not correct. Info new: \n" + newProxyInfo.toHuman() + "\n vs. info old: \n" + oldProxyInfo.toHuman());
                 failed.push([key, value]);
             }
         } else {
@@ -184,7 +217,14 @@ async function verifyProxyProxies(oldData: Array<[StorageKey,  Uint8Array]>, old
     return failed;
 }
 
-async function verifyVestingVesting(oldData: Array<[StorageKey,  Uint8Array]>, oldApi: ApiPromise, newData: Array<[StorageKey,  Uint8Array]>, newApi: ApiPromise, atFrom: bigint, atTo: bigint): Promise<Array<[StorageKey,  Uint8Array]>> {
+async function verifyVestingVesting(
+    oldData: Array<[StorageKey,  Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey,  Uint8Array]>,
+    newApi: ApiPromise,
+    atFrom: bigint,
+    atTo: bigint
+): Promise<Array<[StorageKey,  Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -204,32 +244,41 @@ async function verifyVestingVesting(oldData: Array<[StorageKey,  Uint8Array]>, o
         let overallNew = newBalance.free.toBigInt() + newBalance.reserved.toBigInt();
 
         if (overallNew !== overallOld) {
+            let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+            let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
+            console.log("ERROR: Failed to match old and new balances for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
             failed.push([key, value]);
             continue;
         }
 
-        let oldVestingInfo = oldApi.createType('VestingInfo', compactAddLength(value));
+        let oldVestingInfo = oldApi.createType('VestingInfo', value);
 
         const blockPeriodOldVesting = (oldVestingInfo.locked.toBigInt() / oldVestingInfo.perBlock.toBigInt());
         const blocksPassedSinceVestingStart = (atFrom - oldVestingInfo.startingBlock.toBigInt());
         const remainingBlocksVestingOld = blockPeriodOldVesting - blocksPassedSinceVestingStart;
 
-        if (oldVestingInfo.startingBlock.toBigInt() - atFrom >= 0) {
+        if (remainingBlocksVestingOld <= 0) {
             // Vesting has passed, the chain will resolve this directly upon our inserts.
         } else {
             let newScale = newDataMap.get(key.toHex());
             if (newScale !== undefined) {
-                let newVestingInfo = oldApi.createType('VestingInfo', compactAddLength(newScale));
+                let newVestingInfo = oldApi.createType('VestingInfo', newScale);
 
                 const blockPeriodNewVesting = newVestingInfo.locked.toBigInt() / newVestingInfo.perBlock.toBigInt();
                 const blocksPassedSinceVestingStartNew = (atTo - newVestingInfo.startingBlock.toBigInt());
                 const remainingBlocksVestingNew = blockPeriodNewVesting - blocksPassedSinceVestingStartNew;
 
                 if (remainingBlocksVestingOld !== (remainingBlocksVestingNew * BigInt(2))) {
+                    let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+                    let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
+                    console.log("ERROR: Remaining blocks for vesting are not equal for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
                      failed.push([key, value]);
                 }
 
             } else {
+                let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+                let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
+                console.log("ERROR: Could not find associated VestingInfo on new chain for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
                 failed.push([key, value]);
             }
         }
@@ -268,7 +317,7 @@ export async function prepareMigrate(
             migrationXts.set(prefix, migratedPalletStorageItems)
 
         } else {
-            console.log("Fetched data that can not be migrated. PatriciaKey is: " + prefix);
+            return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + prefix);
         }
     }
 
@@ -321,7 +370,10 @@ export async function migrate(
 }
 
 
-async function prepareSystem(toApi: ApiPromise, keyValues: Map<string, Array<StorageItem>>):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+async function prepareSystem(
+    toApi: ApiPromise,
+    keyValues: Map<string, Array<StorageItem>>
+):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
     // Match against the actual storage items of a pallet.
@@ -330,14 +382,17 @@ async function prepareSystem(toApi: ApiPromise, keyValues: Map<string, Array<Sto
             xts.set(palletStorageItemKey, await prepareSystemAccount(toApi, values));
 
         } else {
-            console.log("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
+            return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
 
     return xts;
 }
 
-async function prepareProxy(toApi: ApiPromise, keyValues: Map<string, Array<StorageItem>>):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+async function prepareProxy(
+    toApi: ApiPromise,
+    keyValues: Map<string, Array<StorageItem>>
+):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
     // Match against the actual storage items of a pallet.
@@ -346,14 +401,17 @@ async function prepareProxy(toApi: ApiPromise, keyValues: Map<string, Array<Stor
             xts.set(palletStorageItemKey, await prepareProxyProxies(toApi, values));
 
         } else {
-            console.log("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
+            return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
 
     return xts;
 }
 
-async function prepareProxyProxies(toApi: ApiPromise, values: StorageItem[]): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
+async function prepareProxyProxies(
+    toApi: ApiPromise,
+    values: StorageItem[]
+): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
     let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
 
     let packetOfProxies: Array<[AccountId, Balance,  Uint8Array]> = new Array();
@@ -388,14 +446,17 @@ async function prepareProxyProxies(toApi: ApiPromise, values: StorageItem[]): Pr
                 packetOfProxies.push([accountId, item.optional, item.value])
             }
         } else {
-            throw Error("Expected Proxy.Proxies storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
+            return Promise.reject("Expected Proxy.Proxies storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
         }
     }
 
     return xts;
 }
 
-async function prepareSystemAccount(toApi: ApiPromise, values: StorageItem[]): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
+async function prepareSystemAccount(
+    toApi: ApiPromise,
+    values: StorageItem[]
+): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
     let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
 
     let packetOfAccounts: Array<[ Uint8Array,  Uint8Array]> = new Array();
@@ -417,7 +478,7 @@ async function prepareSystemAccount(toApi: ApiPromise, values: StorageItem[]): P
                 packetOfAccounts.push(await retrieveIdAndAccount(item))
             }
         } else {
-            throw Error("Expected System.Account storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
+            return Promise.reject("Expected System.Account storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
         }
     }
 
@@ -432,21 +493,27 @@ async function retrieveIdAndAccount(item: StorageMapValue): Promise<[ Uint8Array
     return [id, value];
 }
 
-async function prepareBalances(toApi: ApiPromise, keyValues: Map<string, Array<StorageItem>>):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+async function prepareBalances(
+    toApi: ApiPromise,
+    keyValues: Map<string, Array<StorageItem>>
+):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
     for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)) {
             xts.set(palletStorageItemKey, await prepareBalancesTotalIssuance(toApi, values));
         } else {
-            console.log("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
+            return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
 
     return xts;
 }
 
-async function prepareBalancesTotalIssuance(toApi: ApiPromise, values: StorageItem[]): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
+async function prepareBalancesTotalIssuance(
+    toApi: ApiPromise,
+    values: StorageItem[]
+): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
     let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
 
     if (values.length != 1) {
@@ -459,14 +526,17 @@ async function prepareBalancesTotalIssuance(toApi: ApiPromise, values: StorageIt
 
             xts.push(toApi.tx.migration.migrateBalancesIssuance(issuance))
         } else {
-            throw Error("Expected Balances.TotalIssuance storage value to be of type StorageValueValue. Got: " + JSON.stringify(item));
+            return Promise.reject("Expected Balances.TotalIssuance storage value to be of type StorageValueValue. Got: " + JSON.stringify(item));
         }
     }
 
     return xts;
 }
 
-async function prepareVesting(toApi: ApiPromise, keyValues: Map<string, Array<StorageItem>>):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+async function prepareVesting(
+    toApi: ApiPromise,
+    keyValues: Map<string, Array<StorageItem>>
+):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
     for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
@@ -474,14 +544,17 @@ async function prepareVesting(toApi: ApiPromise, keyValues: Map<string, Array<St
             xts.set(palletStorageItemKey, await prepareVestingVestingInfo(toApi, values));
 
         } else {
-            console.log("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
+            return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
 
     return xts;
 }
 
-async function prepareVestingVestingInfo(toApi: ApiPromise, values: StorageItem[]): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
+async function prepareVestingVestingInfo(
+    toApi: ApiPromise,
+    values: StorageItem[]
+): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
     let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
 
     let packetOfVestings: Array<[AccountId, VestingInfo]> = new Array();
@@ -506,7 +579,7 @@ async function prepareVestingVestingInfo(toApi: ApiPromise, values: StorageItem[
                 packetOfVestings.push([accountId, vestingInfo])
             }
         } else {
-            throw Error("Expected Vesting.Vesting storage value to be of type StorageMapValue. Got: " + JSON.stringify(item));
+            return Promise.reject("Expected Vesting.Vesting storage value to be of type StorageMapValue. Got: " + JSON.stringify(item));
         }
     }
 

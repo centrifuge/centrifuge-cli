@@ -180,7 +180,8 @@ export default class Migration extends CliBaseCommand {
 
                 const newAtTo = (await this.toApi.rpc.chain.getHeader()).hash;
                 // Verify
-                const inconsistentStorage: Array<[StorageKey, number[] | Uint8Array]> = await verifyMigration(this.toApi, this.fromApi, storageToFetch, newAtTo, startFrom, atFrom);
+                const inconsistentStorage: Array<[StorageKey, number[] | Uint8Array]>
+                    = await verifyMigration(this.toApi, this.fromApi, storageToFetch, atTo, newAtTo, startFrom, atFrom);
 
                 if(inconsistentStorage.length === 0) {
                     this.logger.info("Migration has been verified.");
