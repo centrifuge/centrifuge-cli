@@ -1,6 +1,5 @@
 export interface Credentials {
-    pathJSON: string,
-    execPwd: string
+    rawSeed: string
 }
 
 export interface Config {

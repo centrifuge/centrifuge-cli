@@ -13,9 +13,8 @@ export async function verifyMigration(toApi: ApiPromise, fromApi: ApiPromise, st
     const forkDataOld = await fork(fromApi, storageItems, atFrom);
     const forkDataNew = await fork(toApi, storageItems, atTo);
 
-    const fromAsNum = (await fromApi.rpc.chain.getBlock(atFrom)).block.header.number.toBigInt();
     const toAsNum = (await toApi.rpc.chain.getBlock(atTo)).block.header.number.toBigInt();
-    const startFromAsNum = (await toApi.rpc.chain.getBlock(startFrom)).block.header.number.toBigInt();
+    const startFromAsNum = (await fromApi.rpc.chain.getBlock(startFrom)).block.header.number.toBigInt();
 
     let failedVerification= new Array();
 
@@ -427,8 +426,8 @@ async function prepareSystemAccount(toApi: ApiPromise, values: StorageItem[]): P
 
 
 async function retrieveIdAndAccount(item: StorageMapValue): Promise<[ Uint8Array,  Uint8Array]> {
-    const id = item.patriciaKey.toU8a(true);
-    const value = item.value;
+    const id = compactAddLength(item.patriciaKey.toU8a(true));
+    const value = compactAddLength(item.value);
 
     return [id, value];
 }
@@ -457,6 +456,7 @@ async function prepareBalancesTotalIssuance(toApi: ApiPromise, values: StorageIt
     for (const item of values) {
         if (item instanceof StorageValueValue) {
             const issuance = toApi.createType("Balance", item.value);
+            console.log("Migrating issuance of: " + issuance.toHuman());
             xts.push(toApi.tx.migration.migrateBalancesIssuance(issuance))
         } else {
             throw Error("Expected Balances.TotalIssuance storage value to be of type StorageValueValue. Got: " + JSON.stringify(item));

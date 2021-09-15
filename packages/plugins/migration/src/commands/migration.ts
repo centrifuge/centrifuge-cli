@@ -10,7 +10,7 @@ import {KeyringPair} from "@polkadot/keyring/types";
 import {StorageKey} from "@polkadot/types";
 import {fork} from "../migration/fork";
 import {IConfig} from "@oclif/config";
-
+import {cryptoWaitReady} from "@polkadot/util-crypto"
 import {CliBaseCommand} from "@centrifuge-cli/core";
 import {Config, Credentials} from "../migration/interfaces";
 import {prepareMigrate, migrate, verifyMigration} from "../migration/migrate";
@@ -82,6 +82,28 @@ export default class Migration extends CliBaseCommand {
             // Parse Credentials
             await this.parseCredentials(flags.creds);
 
+            this.logger.debug("Connecting to source network: ", args["source-network"])
+            const wsProviderFrom = new WsProvider(args["source-network"]);
+            this.fromApi = await ApiPromise.create({
+                provider: wsProviderFrom,
+                types: {
+                    ProxyType: {
+                        _enum: ['Any', 'NonTransfer', 'Governance', 'Staking', 'Vesting']
+                    }
+                }
+            });
+
+            this.logger.debug("Connecting to destination network: ", args["destination-network"])
+            const wsProviderTo = new WsProvider(args["destination-network"]);
+            this.toApi = await ApiPromise.create({
+                provider: wsProviderTo,
+                types: {
+                    ProxyType: {
+                        _enum: ['Any', 'NonTransfer', 'Governance', '_Staking', 'NonProxy']
+                    }
+                }
+            });
+
 
             // Get latest block from standalone chain
             const startFrom = (await this.fromApi.rpc.chain.getHeader()).hash
@@ -90,7 +112,12 @@ export default class Migration extends CliBaseCommand {
             if (flags["from-block"] != '-1') {
                 atFrom = await this.fromApi.rpc.chain.getBlockHash(flags["from-block"]);
                 // Check if this really results in a block. This can fail. Hence, we will fail here
-                await this.fromApi.rpc.chain.getBlock(atFrom);
+                try {
+                    await this.fromApi.rpc.chain.getBlock(atFrom);
+                } catch (err) {
+                    this.logger.fatal("Unable to fetch block " + flags["from-block"] + " from " + args["source-network"] + ". Aborting!");
+                    this.exit(2);
+                }
             }
 
             const atTo = (await this.toApi.rpc.chain.getHeader()).hash;
@@ -168,8 +195,18 @@ export default class Migration extends CliBaseCommand {
                     this.logger.fatal("Failed to verify all migrated storage elements. Failures are (values refer to storage from old-chain): \n" + msg);
                 }
             }
+
+            this.fromApi.disconnect();
+            this.toApi.disconnect()
         } catch (err) {
+            try {
+                this.fromApi.disconnect();
+                this.toApi.disconnect()
+            } catch(err) {
+                this.exit(2);
+            }
             this.logger.error(err);
+            this.exit(2);
         }
 
     }
@@ -207,26 +244,12 @@ export default class Migration extends CliBaseCommand {
     }
 
     async parseConfig(filePath: string) {
-        const wsProviderFrom = new WsProvider("wss://fullnode-archive.centrifuge.io");
-        const fromApi = await ApiPromise.create({
-            provider: wsProviderFrom,
-            types: {
-                ProxyType: {
-                    _enum: ['Any', 'NonTransfer', 'Governance', 'Staking', 'Vesting']
-                }
-            }
-        });
-
-        //const wsProviderTo = new WsProvider("ws://127.0.0.1:9946");
-        const wsProviderTo = new WsProvider("wss://fullnode-collator.charcoal.centrifuge.io");
-        const toApi = await ApiPromise.create({
-            provider: wsProviderTo,
-            types: {
-                ProxyType: {
-                    _enum: ['Any', 'NonTransfer', 'Governance', '_Staking', 'NonProxy']
-                }
-            }
-        });
+        try {
+            let file = fs.readFileSync(filePath);
+            this.migrationConfig = JSONbig.parse(file.toString());
+        } catch (err) {
+            return Promise.reject(err);
+        }
     }
 
 
@@ -235,14 +258,14 @@ export default class Migration extends CliBaseCommand {
             let file = fs.readFileSync(filePath);
             let credentials: Credentials = JSONbig.parse(file.toString());
 
-            if (credentials.execPwd === undefined || credentials.pathJSON === undefined) {
-                return Promise.reject("Missing password for executing account.");
+            if (credentials.rawSeed === undefined) {
+                return Promise.reject("Missing seed for executing account.");
             } else {
                 const keyring = new Keyring({type: 'sr25519'});
-                let fileJSON = fs.readFileSync(credentials.pathJSON);
-
-                const execPair = keyring.addFromUri(fileJSON.toString());
-                execPair.unlock(credentials.execPwd)
+                 if(!await cryptoWaitReady()) {
+                     return Promise.reject("Could not initilaize WASM environment for crypto. Aborting!");
+                 }
+                const execPair = keyring.addFromUri(credentials.rawSeed);
                 this.exec = execPair;
             }
         } catch (err) {

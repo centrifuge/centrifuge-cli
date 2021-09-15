@@ -29,7 +29,7 @@ export async function transform(
 
         } else if (key.startsWith(xxhashAsHex("Vesting", 128))) {
             let palletKey = xxhashAsHex("Vesting", 128);
-            let migratedPalletStorageItems = await transformVesting(fromApi, toApi, keyValues, startFrom, atFrom, atTo);
+            let migratedPalletStorageItems = await transformVesting(fromApi, toApi, keyValues, startFrom, atTo);
             state.set(palletKey, migratedPalletStorageItems)
 
         } else if (key.startsWith(xxhashAsHex("Proxy", 128))) {
@@ -199,16 +199,16 @@ async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPro
     return new StorageValueValue(newIssuance.toU8a(true));
 }
 
-async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, number[] | Uint8Array]>, startFrom: Hash, atFrom: Hash, atTo: Hash):  Promise<Map<string, Array<StorageItem>>> {
+async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, number[] | Uint8Array]>, atFrom: Hash, atTo: Hash):  Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
     const atToAsNumber = (await toApi.rpc.chain.getBlock(atTo)).block.header.number.toBigInt();
-    const startFromAsNumber =  (await toApi.rpc.chain.getBlock(startFrom)).block.header.number.toBigInt();
+    const atFromAsNumber =  (await fromApi.rpc.chain.getBlock(atFrom)).block.header.number.toBigInt();
 
 
     for(let [patriciaKey, value] of keyValues) {
         if (patriciaKey.toHex().startsWith(xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2);
-            await insertOrNewMap(state, pkStorageItem, await transformVestingVestingInfo(fromApi, toApi, patriciaKey, value, startFromAsNumber, atToAsNumber));
+            await insertOrNewMap(state, pkStorageItem, await transformVestingVestingInfo(fromApi, toApi, patriciaKey, value, atFromAsNumber, atToAsNumber));
 
         } else {
             return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + patriciaKey.toHuman());

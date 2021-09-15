@@ -26,7 +26,8 @@
     "@polkadot/api": "^4.16.2",
     "@polkadot/types": "^4.16.2",
     "@centrifuge-cli/core": "0.1.0",
-    "@centrifuge-cli/dispatcher": "0.1.0"
+    "@centrifuge-cli/dispatcher": "0.1.0",
+    "json-bigint": "^1.0.0"
   },
   "oclif": {
     "commands": "./dist/commands",
