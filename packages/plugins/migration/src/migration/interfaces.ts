@@ -16,6 +16,14 @@ export interface StorageItemConfig {
     name: string
 }
 
+export interface MigrationStats {
+    fromFetchedAt: bigint,
+    fromStartedAt: bigint,
+    toStartedAt: bigint
+    toEndAt: bigint,
+    modules: Array<SequenceConfig>,
+}
+
 export interface SequenceConfig {
     name: string,
     item: string,

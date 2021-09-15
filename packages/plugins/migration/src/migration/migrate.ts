@@ -96,10 +96,20 @@ async function verifySystemAccount(
             if (oldAccount.data.free.toBigInt() + oldAccount.data.reserved.toBigInt()
                 !== newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt())
             {
+                let newAccountId = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+                let oldAccountId = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
+                console.log(
+                    "ERROR ACCOUNT: old and new value does not match... \n   Old: "
+                    + oldAccount.data.free.toBigInt() + oldAccount.data.reserved.toBigInt()
+                    +" vs. New: " +newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt()
+                    + "\n    for account new " + newAccountId.toHuman() + " account old " + oldAccountId.toHuman()
+                );
                 failed.push([key, value]);
             }
 
         } else {
+            let oldAccountId = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
+            console.log("ERROR ACCOUNT: Could not find responding account on new chain. Lost account is: " + oldAccountId.toHuman());
             failed.push([key, value]);
         }
 
@@ -132,17 +142,19 @@ async function verifyBalanceTotalIssuance(
         let newScale = newDataMap.get(key.toHex());
         if (newScale !== undefined) {
             let issuanceBeforeMigrationStorage
-                = await newApi.rpc.state.getStorage(key.toHex(), await newApi.rpc.chain.getBlockHash(migrationStartBlock - BigInt(1)));
+                = await newApi.rpc.state.getStorage(key.toHex(), await newApi.rpc.chain.getBlockHash(migrationStartBlock));
 
             //@ts-ignore
             let issuanceBeforeMigration = newApi.createType('Balance', issuanceBeforeMigrationStorage.toU8a(true));
             let newIssuance = newApi.createType('Balance', newScale);
 
-            if (oldIssuance.toBigInt() !== newIssuance.toBigInt() - issuanceBeforeMigration.toBigInt()) {
+            if (oldIssuance.toBigInt() !== (newIssuance.toBigInt() - issuanceBeforeMigration.toBigInt())) {
+                console.log("ERROR ISSUANCE: New total issuance does not match. \n   Old: " + oldIssuance.toHuman() + " vs. New: " + (newIssuance.toHuman()));
                 failed.push([key, value]);
             }
 
         } else {
+            console.log("ERROR ISSUANCE: New total issuance not found...");
             failed.push([key, value]);
         }
 
@@ -177,34 +189,44 @@ async function verifyProxyProxies(
             // @ts-ignore
             let newProxyInfo = newApi.createType('(Vec<ProxyDefinition<AccountId, ProxyType, BlockNumber>>, Balance)', newScale);
 
+            // Check if same amount of delegatees and same amount of reserved in the system
             // @ts-ignore
-            if (oldProxyInfo[0][0].length === newProxyInfo[0][0].length
+            if (oldProxyInfo[0].length === newProxyInfo[0].length
                 // @ts-ignore
-                && oldProxyInfo[0][1].toBigInt() === newProxyInfo[0][1].toBigInt()
-                // @ts-ignore
-                && oldProxyInfo[0][0][1].toBigInt() === newProxyInfo[0][0]["proxyType"].toBigInt()
+                && oldProxyInfo[1].toBigInt() === newProxyInfo[1].toBigInt()
             ) {
                 // Now also check each delegate of this proxy entry
                 // @ts-ignore
-                for(const oldDelegate of oldProxyInfo[0][0]) {
+                for(const oldDelegate of oldProxyInfo[0]) {
                     let found = false;
                     let oldAccount = oldDelegate[0].toHex();
 
                     // @ts-ignore
-                    for (const newDelegate of newProxyInfo[0][0]) {
+                    for (const newDelegate of newProxyInfo[0]) {
                         let newAccount = newDelegate["delegate"].toHex();
-                        if (oldAccount === newAccount) {
+                        let newProxyType = newApi.createType("ProxyType", oldDelegate[1]);
+                        if (oldAccount === newAccount &&
+                            newDelegate['proxyType'].toHex() === newProxyType.toHex())
+                        {
                             found = true;
                         }
                     }
 
                     if (!found){
-                        console.log("ERROR: Could not find delegate for migrated proxy. Missing " + oldAccount);
+                        console.log("ERROR PROXIES: Could not find delegate for migrated proxy. Missing " + oldAccount);
                         failed.push([key, value]);
                     }
                 }
             } else {
-                console.log("ERROR: Migrated ProdyInfo is not correct. Info new: \n" + newProxyInfo.toHuman() + "\n vs. info old: \n" + oldProxyInfo.toHuman());
+                let msg = "";
+                // @ts-ignore
+                for (const newDelegate of newProxyInfo[0]) {
+                    msg += newDelegate['delegate'].toHuman() +", "+ newDelegate['proxyType'].toHuman()+ "; ";
+                }
+                //@ts-ignore
+                msg += ", " + newProxyInfo[1].toHuman()
+                //@ts-ignore
+                console.log("ERROR PROXIES: Migrated ProxyInfo is not correct. Info new: " + msg + "\n vs. info old: " + oldProxyInfo.toHuman());
                 failed.push([key, value]);
             }
         } else {
@@ -236,21 +258,6 @@ async function verifyVestingVesting(
     for(let [key, value] of oldData) {
         process.stdout.write("    Verifying:    "+ checked +"/ \r");
 
-        // Ensure existance of this account
-        const { data: oldBalance } = await oldApi.query.system.account(key.toU8a(true).slice(-32));
-        const { data: newBalance } = await newApi.query.system.account(key.toU8a(true).slice(-32));
-
-        let overallOld = oldBalance.free.toBigInt() + oldBalance.reserved.toBigInt();
-        let overallNew = newBalance.free.toBigInt() + newBalance.reserved.toBigInt();
-
-        if (overallNew !== overallOld) {
-            let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
-            let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
-            console.log("ERROR: Failed to match old and new balances for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
-            failed.push([key, value]);
-            continue;
-        }
-
         let oldVestingInfo = oldApi.createType('VestingInfo', value);
 
         const blockPeriodOldVesting = (oldVestingInfo.locked.toBigInt() / oldVestingInfo.perBlock.toBigInt());
@@ -267,11 +274,13 @@ async function verifyVestingVesting(
                 const blockPeriodNewVesting = newVestingInfo.locked.toBigInt() / newVestingInfo.perBlock.toBigInt();
                 const blocksPassedSinceVestingStartNew = (atTo - newVestingInfo.startingBlock.toBigInt());
                 const remainingBlocksVestingNew = blockPeriodNewVesting - blocksPassedSinceVestingStartNew;
+                const nullOrOne = remainingBlocksVestingOld - (remainingBlocksVestingNew * BigInt(2));
 
-                if (remainingBlocksVestingOld !== (remainingBlocksVestingNew * BigInt(2))) {
+                // Due to the arithmetics we accept if a vesting is off by 2 blocks in each direction.
+                if (!(BigInt(-2)  <= nullOrOne &&  nullOrOne <= BigInt(2))) {
                     let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
                     let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
-                    console.log("ERROR: Remaining blocks for vesting are not equal for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
+                    console.log("ERROR: Remaining blocks for vesting are not equal...\n   Old: " +remainingBlocksVestingOld +" vs. New: "+remainingBlocksVestingNew*BigInt(2)+"\n    for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
                      failed.push([key, value]);
                 }
 

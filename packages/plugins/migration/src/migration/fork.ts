@@ -64,20 +64,26 @@ async function fetchState(api: ApiPromise, at: Hash, key: StorageKey): Promise<A
     let pairs: Array<[StorageKey, Uint8Array ]> = [];
 
     accumulate = 0;
+    let promises = new Array();
     for (const storageKey of keyArray) {
-        let storageValue = await api.rpc.state.getStorage(storageKey, at);
-        // @ts-ignore
-        let storageArray = storageValue.toU8a(true);
+        let clos = (async () => {
+            let storageValue = await api.rpc.state.getStorage(storageKey, at);
+            // @ts-ignore
+            let storageArray = storageValue.toU8a(true);
 
-        if (storageArray !== undefined && storageArray.length > 0) {
-            pairs.push([storageKey, storageArray]);
-        } else {
-            console.log("ERROR: Fetched empty storage value for key " + storageKey.toHex() + "\n");
-        }
+            if (storageArray !== undefined && storageArray.length > 0) {
+                pairs.push([storageKey, storageArray]);
+            } else {
+                console.log("ERROR: Fetched empty storage value for key " + storageKey.toHex() + "\n");
+            }
 
-        accumulate = accumulate + 1;
-        process.stdout.write("Fetched storage values: " + accumulate + "/" + keyArray.length + "\r");
+            accumulate = accumulate + 1;
+            process.stdout.write("Fetched storage values: " + accumulate + "/" + keyArray.length + "\r");
+        })
+        promises.push(clos());
     }
+
+    await Promise.all(promises);
 
     process.stdout.write("\n");
 
