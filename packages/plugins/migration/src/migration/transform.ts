@@ -1,11 +1,12 @@
 import {ApiPromise} from "@polkadot/api";
 import { xxhashAsHex } from "@polkadot/util-crypto";
-import {Balance, Hash, ProxyDefinition} from "@polkadot/types/interfaces";
+import {AccountInfo, Balance, Hash, ProxyDefinition} from "@polkadot/types/interfaces";
 import { insertOrNewMap, StorageItem, StorageValueValue, StorageMapValue } from "../migration/common";
 import {StorageKey} from "@polkadot/types";
+import {compactAddLength} from "@polkadot/util";
 
 export async function transform(
-    forkData: Map<string, Array<[ StorageKey, Uint8Array | number[]]>>,
+    forkData: Map<string, Array<[ StorageKey, Uint8Array]>>,
     fromApi: ApiPromise,
     toApi: ApiPromise,
     startFrom: Hash,
@@ -45,7 +46,7 @@ export async function transform(
     return state;
 }
 
-async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array | number[]]>):  Promise<Map<string, Array<StorageItem>>> {
+async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>):  Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
 
     // Match against the actual storage items of a pallet.
@@ -61,7 +62,7 @@ async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues:
     return state;
 }
 
-async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldProxies: number[] | Uint8Array): Promise<StorageItem> {
+async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldProxies:  Uint8Array): Promise<StorageItem> {
     // @ts-ignore, see https://github.com/polkadot-js/api/issues/3746
     let oldProxyInfo = fromApi.createType('(Vec<(AccountId, ProxyType)>, Balance)', scaleOldProxies);
 
@@ -133,7 +134,7 @@ async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, com
 }
 
 
-async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array | number[]]>):  Promise<Map<string, Array<StorageItem>>> {
+async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array ]>):  Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
 
     // Match against the actual storage items of a pallet.
@@ -150,8 +151,9 @@ async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues
     return state;
 }
 
-async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldAccountInfo: number[] | Uint8Array): Promise<StorageItem> {
+async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldAccountInfo:  Uint8Array): Promise<StorageItem> {
     let oldAccountInfo = fromApi.createType("AccountInfo", scaleOldAccountInfo);
+
     let newAccountInfo = await toApi.createType("AccountInfo", [
         0, // nonce
         0, // consumers
@@ -173,7 +175,7 @@ async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, co
     return new StorageMapValue(newAccountInfo.toU8a(true), completeKey);
 }
 
-async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, number[] | Uint8Array]>):  Promise<Map<string, Array<StorageItem>>>{
+async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey,  Uint8Array]>):  Promise<Map<string, Array<StorageItem>>>{
     let state: Map<string, Array<StorageItem>> = new Map();
 
     for(let [patriciaKey, value] of keyValues) {
@@ -188,7 +190,7 @@ async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValu
     return state;
 }
 
-async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldTotalIssuance: number[] | Uint8Array): Promise<StorageItem> {
+async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldTotalIssuance:  Uint8Array): Promise<StorageItem> {
     let oldIssuance = fromApi.createType("Balance", scaleOldTotalIssuance);
     let newIssuance = toApi.createType("Balance", oldIssuance.toU8a(true));
 
@@ -199,7 +201,7 @@ async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPro
     return new StorageValueValue(newIssuance.toU8a(true));
 }
 
-async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, number[] | Uint8Array]>, atFrom: Hash, atTo: Hash):  Promise<Map<string, Array<StorageItem>>> {
+async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey,  Uint8Array]>, atFrom: Hash, atTo: Hash):  Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
     const atToAsNumber = (await toApi.rpc.chain.getBlock(atTo)).block.header.number.toBigInt();
     const atFromAsNumber =  (await fromApi.rpc.chain.getBlock(atFrom)).block.header.number.toBigInt();
@@ -218,7 +220,7 @@ async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValue
     return state;
 }
 
-async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldVestingInfo: number[] | Uint8Array, atFrom: bigint, atTo: bigint): Promise<StorageItem> {
+async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldVestingInfo:  Uint8Array, atFrom: bigint, atTo: bigint): Promise<StorageItem> {
     let old = fromApi.createType("VestingInfo", scaleOldVestingInfo);
 
     let remainingLocked;

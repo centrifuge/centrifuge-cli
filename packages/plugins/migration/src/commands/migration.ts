@@ -61,11 +61,12 @@ export default class Migration extends CliBaseCommand {
             description: 'Path to a JSON-file that specifies the passwords and the path to the executor account.',
             required: true
         }),
+        'dry-run': flags.boolean( {
+            description: 'This will fetch the storages, do the transformations but then stops before executing the extrinsics.',
+        }),
         'verify': flags.boolean({
             description: 'Verifies the migration after running it.',
-            default: false
-        })
-
+        }),
     };
 
     constructor(argv: string[], config: IConfig) {
@@ -134,42 +135,44 @@ export default class Migration extends CliBaseCommand {
             const migrationExtrinsics = await prepareMigrate(transformedState, this.fromApi, this.toApi);
 
             // Execute migration
-            const sequence = await this.createSequenceElements()
-            const failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
-            const executedExts: Array<[Hash, bigint]> = await migrate(this.toApi, this.exec, sequence, migrationExtrinsics, (failedExts) => {
-                failed.push(...failedExts);
-            });
+            if (!flags['dry-run']) {
+                const sequence = await this.createSequenceElements()
+                const failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
+                const executedExts: Array<[Hash, bigint]> = await migrate(this.toApi, this.exec, sequence, migrationExtrinsics, (failedExts) => {
+                    failed.push(...failedExts);
+                });
 
-            if (failed.length != 0) {
-                let msg = ''
-                let counter = 0;
-                for (const xt of failed) {
-                    if(counter !== failed.length) {
-                        msg += ("    " + xt.toJSON() + "\n");
-                    } else {
-                        msg += ("    " + xt.toJSON());
+                if (failed.length != 0) {
+                    let msg = ''
+                    let counter = 0;
+                    for (const xt of failed) {
+                        if (counter !== failed.length) {
+                            msg += ("    " + xt.toJSON() + "\n");
+                        } else {
+                            msg += ("    " + xt.toJSON());
+                        }
+                        counter++;
                     }
-                    counter++;
+
+                    this.logger.error("The following extrinsics failed:\n" + msg);
+                } else {
+                    this.logger.info("Migration was successful.");
                 }
 
-                this.logger.error("The following extrinsics failed:\n" + msg);
-            } else {
-                this.logger.info("Migration was successful.");
-            }
-
-            // Log extrinsics
-            {
-                let msg = '';
-                let counter = 0
-                for (const xt of executedExts) {
-                    if(counter !== failed.length) {
-                        msg += ("    Block-hash: " + xt[0].toHex() + " and index: " + xt[1].toString() + "\n");
-                    } else {
-                        msg += ("    Block-hash: " + xt[0].toHex() + " and index: " + xt[1].toString());
+                // Log extrinsics
+                {
+                    let msg = '';
+                    let counter = 0
+                    for (const xt of executedExts) {
+                        if (counter !== failed.length) {
+                            msg += ("    Block-hash: " + xt[0].toHex() + " and index: " + xt[1].toString() + "\n");
+                        } else {
+                            msg += ("    Block-hash: " + xt[0].toHex() + " and index: " + xt[1].toString());
+                        }
+                        counter++;
                     }
-                    counter++;
+                    this.logger.debug("The following extrinsics were executed:\n" + msg);
                 }
-                this.logger.debug("The following extrinsics were executed:\n" + msg);
             }
 
             if (flags.verify) {

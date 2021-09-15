@@ -456,7 +456,7 @@ async function prepareBalancesTotalIssuance(toApi: ApiPromise, values: StorageIt
     for (const item of values) {
         if (item instanceof StorageValueValue) {
             const issuance = toApi.createType("Balance", item.value);
-            console.log("Migrating issuance of: " + issuance.toHuman());
+
             xts.push(toApi.tx.migration.migrateBalancesIssuance(issuance))
         } else {
             throw Error("Expected Balances.TotalIssuance storage value to be of type StorageValueValue. Got: " + JSON.stringify(item));
