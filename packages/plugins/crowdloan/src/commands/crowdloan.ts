@@ -6,7 +6,7 @@ import {KeyringPair} from "@polkadot/keyring/types";
 import {GenericExtrinsic} from "@polkadot/types";
 import {compactAddLength} from "@polkadot/util";
 import { blake2AsHex } from "@polkadot/util-crypto";
-import { Storage } from "@google-cloud/storage";
+import {DownloadResponse, Storage} from "@google-cloud/storage";
 import * as fs from "fs";
 import {getContributions as getContributionsKusama} from "../crowdloan/kusama";
 import {getContributions as getContributionsPolkadot} from "../crowdloan/polkadot";
@@ -103,6 +103,8 @@ export default class Crowdloan extends CliBaseCommand {
         try {
             const {args, flags} = this.parse(Crowdloan)
 
+            this.paraApi = await Crowdloan.getApiPromise(flags.para);
+
             this.crwdloanCfg = await Crowdloan.parseConfig(flags.relay, flags.config);
 
             this.logger.debug(this.crwdloanCfg)
@@ -111,7 +113,6 @@ export default class Crowdloan extends CliBaseCommand {
 
             this.executor = await this.parseAccountFromJson(flags.exec);
 
-            this.paraApi = await Crowdloan.getApiPromise(flags.para);
 
             let contributions: Map<AccountId, Balance>;
             if (flags['run-from-tree'] === undefined) {
@@ -428,7 +429,7 @@ export default class Crowdloan extends CliBaseCommand {
 
     private async getContributions(network: string): Promise<Map<AccountId, Balance>> {
         if (network === 'Kusama') {
-            const api = await Crowdloan.getApiPromise("wss://kusama.polkadot.io");
+            const api = await Crowdloan.getApiPromise("wss://kusama-rpc.polkadot.io");
             const codes =  await this.fetchCodesFromCloud(
                 api,
                 'centrifuge-production-x',
@@ -462,44 +463,41 @@ export default class Crowdloan extends CliBaseCommand {
             walletAddress: string;
         };
 
-        const getReferralCodesWithAddresses = async (): Promise<ReferralCode[]> => {
-            const storage = new Storage({
-                projectId: projectId,
-                credentials: {
-                    client_email: GOOGLE_CLOUD_CLIENT_EMAIL,
-                    private_key: GOOGLE_CLOUD_PRIVATE_KEY,
-                },
-            });
+        const storage = new Storage({
+            projectId: projectId,
+            credentials: {
+                client_email: GOOGLE_CLOUD_CLIENT_EMAIL,
+                private_key: GOOGLE_CLOUD_PRIVATE_KEY,
+            },
+        });
 
-            const referralCodeBucket = storage.bucket(bucket);
+        const referralCodeBucket = storage.bucket(bucket);
 
-            const [files] = await referralCodeBucket.getFiles();
+        const [files] = await referralCodeBucket.getFiles();
 
-            this.logger.debug('Got ' + files.length + ' files');
-
-            const promises = files.map(async (file) => {
-                const content = await referralCodeBucket.file(file.name).download();
-
-                const encoded = {
-                    walletAddress: content[0].toString('utf8'),
-                    referralCode: file.name.replace('.txt', ''),
-                };
-
-                return encoded;
-            });
-
-            return Promise.all(promises);
-        };
-
-
-        const result = await getReferralCodesWithAddresses();
+        this.logger.debug('Got ' + files.length + ' files.');
+        this.logger.debug('Downloading files now. This will take a while...');
 
         let codes: Map<string, AccountId> = new Map();
-        for (const {walletAddress, referralCode} of result ){
-            codes.set(referralCode, api.createType("AccountId", walletAddress));
-        }
+        let counter = 0;
+        for(const file of files){
+            const content = await referralCodeBucket.file(file.name).download();
 
-        this.logger.debug("Fetched codes are:  " +  JSONbig.stringify(codes, null, '\t'));
+            const encoded = {
+                walletAddress: api.createType("AccountId", content[0].toString('utf8')),
+                referralCode: file.name.replace('.txt', ''),
+            };
+            counter++;
+            this.logger.debug("Downloaded: " + counter + " of " + files.length + " \n    "
+                + "{account: " + encoded.walletAddress.toHuman() + ", referralCode: " + encoded.referralCode + "}");
+
+            codes.set(encoded.referralCode, encoded.walletAddress);
+
+            // TODO: REMOVE
+            if (counter == 20 ) {
+                break;
+            }
+        }
 
         return codes;
     }
