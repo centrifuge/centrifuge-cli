@@ -10,6 +10,7 @@ export interface Config {
 }
 
 export interface CrowdloanSpec {
+    network: string,
     paraId: bigint
     trieIndex: bigint
     createBlock: bigint
@@ -30,6 +31,15 @@ export interface RewardConfig {
 }
 
 export interface TransformConfig {
+    kusama: KusamaTransformConfig
+    polkadot: PolkadotTransformConfig
+}
+
+export interface PolkadotTransformConfig {
+
+}
+
+export interface KusamaTransformConfig {
     decimalDifference: bigint,
     conversionRate: bigint,
     earlyBirdPrct: bigint,
@@ -37,16 +47,6 @@ export interface TransformConfig {
     earlyHourPrct: bigint,
     referralUsedPrct: bigint,
     referedPrct: bigint,
-}
-
-export interface Contributor {
-    account: string, // A string, encoding account id as hex (0x...)
-    contribution: bigint, // Probably a BigInt
-    codes: Array<string>, // This will be empy and must be fetched by the UI from the bucket
-    referred: boolean,
-    earlyHour: boolean, // True if contributed in PREVIOUS crowdloan
-    whenContributed: bigint, // Probably a BigInt
-    referrals: Array<AccountId>
 }
 
 export interface Credentials {

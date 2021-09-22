@@ -8,6 +8,8 @@ import {compactAddLength} from "@polkadot/util";
 import { blake2AsHex } from "@polkadot/util-crypto";
 import { Storage } from "@google-cloud/storage";
 import * as fs from "fs";
+import {getContributions as getContributionsKusama} from "../crowdloan/kusama";
+import {getContributions as getContributionsPolkadot} from "../crowdloan/polkadot";
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
@@ -15,7 +17,7 @@ import {fetchChildState, createDefaultChildStorageKey, Hasher} from "@centrifuge
 import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray} from "@centrifuge-cli/util"
 import {CliBaseCommand} from "@centrifuge-cli/core";
 
-import {Config, CrowdloanSpec, TransformConfig, Contributor, MerkleTree, Credentials} from "../crowdloan/interfaces";
+import {Config, CrowdloanSpec, TransformConfig, MerkleTree, Credentials} from "../crowdloan/interfaces";
 
 
 export default class Crowdloan extends CliBaseCommand {
@@ -24,10 +26,9 @@ export default class Crowdloan extends CliBaseCommand {
 
     // The api providing access to the parachain
     paraApi!: ApiPromise
-    relayApi!: ApiPromise
 
     // This one will only be filled during generation of Keypairs if simulate is set
-    syntheticAccounts: Map<AccountId, KeyringPair> = new Map()
+    syntheticAccounts: Map<AccountId, [KeyringPair, bigint]> = new Map()
 
     // The account that will initialize the pallets and also fund the reward pallet (sudo account)
     executor!: KeyringPair
@@ -48,12 +49,14 @@ export default class Crowdloan extends CliBaseCommand {
     static flags = {
         'relay': flags.string({
             char: 'r',
-            description: 'the networks ws-endpoint of the relay chain',
-            default: 'wss://rpc.polkadot.io'
+            description: 'the network name of the relay-chain',
+            options: ['Kusama', 'Polkadot'],
+            required: true
         }),
         'para': flags.string({
             char: 'p',
             description: 'the networks ws-endpoint of the para chain',
+            // TODO: remove and add required after testing
             default: 'wss://fullnode-collator.charcoal.centrifuge.io'
         }),
         'config': flags.string({
@@ -64,10 +67,6 @@ export default class Crowdloan extends CliBaseCommand {
             description: 'Path to a JSON-file that specifies the passwords for the cloud-storage.',
             required: true
         }),
-        'fetch-failed-events': flags.boolean({
-            description: 'Solely used, when we want to update the state, due to some failing events at the beginning of Kusamas second crowdloan',
-            default: false,
-        }),
         'dry-run': flags.boolean({
             description: 'If present, the cli will generate the tree and spill out the amount of funding needed for the exec.',
             default: false,
@@ -75,6 +74,11 @@ export default class Crowdloan extends CliBaseCommand {
         'tree-output': flags.string({
             description: 'If present, the cli will generate a JSON file containing the generated merkle tree. The argument is the path were tree is stored.',
             default: './outputs'
+        }),
+        // TODO: Implement this feature
+        'run-from-tree': flags.string({
+            description: 'Allows to initialize the pallets with a tree previsouly created with this script',
+            exclusive: ['simulate, dry-run, tree-output']
         }),
         'exec': flags.string({
             char: 'e',
@@ -99,7 +103,7 @@ export default class Crowdloan extends CliBaseCommand {
         try {
             const {args, flags} = this.parse(Crowdloan)
 
-            this.crwdloanCfg = await Crowdloan.parseConfig(flags.config);
+            this.crwdloanCfg = await Crowdloan.parseConfig(flags.relay, flags.config);
 
             this.logger.debug(this.crwdloanCfg)
 
@@ -108,32 +112,42 @@ export default class Crowdloan extends CliBaseCommand {
             this.executor = await this.parseAccountFromJson(flags.exec);
 
             this.paraApi = await Crowdloan.getApiPromise(flags.para);
-            this.relayApi = await Crowdloan.getApiPromise(flags.relay);
 
-            const contributions: Map<AccountId, Balance> = (flags.simulate)
-                ? await this.generateContributions(this.relayApi)
-                : await this.getContributions(this.relayApi, flags["fetch-failed-events"]);
+            let contributions: Map<AccountId, Balance>;
+            if (flags['run-from-tree'] === undefined) {
+                 contributions = (flags.simulate)
+                    ? await this.generateContributions()
+                    : await this.getContributions(flags.relay);
 
-            if (flags.simulate) {
-                let file = './outputs/CROWDLOAN-syntheticContributors-' + Date.now() + '.json'
-                let asArray = new Array();
-                this.syntheticAccounts.forEach((keyPair, id) => asArray.push({account: id.toHex(), keyPair: keyPair.toJson()}));
+                if (flags.simulate) {
+                    let file = './outputs/CROWDLOAN-syntheticContributors-' + Date.now() + '.json'
+                    let asArray = new Array();
+                    this.syntheticAccounts.forEach(([keyPair, amount], id) => asArray.push({
+                        account: id.toHex(),
+                        keyPair: keyPair.toJson(),
+                        contribution: amount
+                    }));
 
-                if(fs.existsSync('./outputs')) {
-                    fs.writeFile(file, JSONbig.stringify(asArray, null, '\t'), err => {
-                        if (err) {
-                            this.logger.error("Error writing synthetic contributors to file. \n" + err)
-                            this.logger.debug("Synthetic Contributors: \n" + JSONbig.stringify(asArray, null, '\t'));
-                        }
-                    });
+                    if (fs.existsSync('./outputs')) {
+                        fs.writeFile(file, JSONbig.stringify(asArray, null, '\t'), err => {
+                            if (err) {
+                                this.logger.error("Error writing synthetic contributors to file. \n" + err)
+                                this.logger.debug("Synthetic Contributors: \n" + JSONbig.stringify(asArray, null, '\t'));
+                            }
+                        });
 
-                } else {
-                    this.logger.warn("Folder '" + process.cwd()  +"/outputs' does not exist. Could not store Merkle-tree.")
-                    this.logger.debug("Synthetic Contributors: \n" +  JSONbig.stringify(asArray, null, '\t'));
+                    } else {
+                        this.logger.warn("Folder '" + process.cwd() + "/outputs' does not exist. Could not store Merkle-tree.")
+                        this.logger.debug("Synthetic Contributors: \n" + JSONbig.stringify(asArray, null, '\t'));
+                    }
                 }
             }
 
-            const tree: MerkleTree = await Crowdloan.generateMerkleTree(contributions);
+            const tree: MerkleTree = (flags['run-from-tree'] === undefined)
+                // @ts-ignore // We assign "contribution" above, when have flag NOT set
+                ? await Crowdloan.generateMerkleTree(contributions)
+                : await Crowdloan.parseMerkleTree(flags['run-from-tree'])
+
             if(flags["tree-output"] !== undefined) {
                 if(fs.existsSync(flags["tree-output"])) {
                     fs.writeFile(flags["tree-output"] + "/CROWDLOAN-merkleTree-" + Date.now() + ".json", JSONbig.stringify(tree, null, '\t'), err => {
@@ -148,7 +162,7 @@ export default class Crowdloan extends CliBaseCommand {
                 }
             }
 
-            const funding: Balance = await this.calculateFunding(contributions);
+            const funding: Balance = await this.calculateFunding(tree);
 
             const { data: execBalance } = await this.paraApi.query.system.account(this.executor.address);
 
@@ -161,7 +175,7 @@ export default class Crowdloan extends CliBaseCommand {
                 await this.initializePallets(tree, funding.toBigInt());
 
                 if(flags.test && flags.simulate) {
-                    await this.runTest(contributions, tree);
+                    await this.runTest(tree);
                 } else {
                     throw new Error("Unreachable Code...");
                 }
@@ -177,13 +191,11 @@ export default class Crowdloan extends CliBaseCommand {
             }
 
             this.paraApi.disconnect();
-            this.relayApi.disconnect();
         } catch (err) {
             this.logger.error(err);
             // We need to manually disconnect here.
             try {
                 this.paraApi.disconnect();
-                this.relayApi.disconnect();
             } catch (err) {
                 this.logger.error(err)
             }
@@ -220,11 +232,11 @@ export default class Crowdloan extends CliBaseCommand {
         }
     }
 
-    private async calculateFunding(contributions: Map<AccountId, Balance>): Promise<Balance> {
+    private async calculateFunding(contributions: MerkleTree): Promise<Balance> {
         let funding = BigInt(0);
 
-        for (const amount of contributions.values()) {
-            funding += amount.toBigInt();
+        for (const {contribution} of contributions.data) {
+            funding += contribution;
         }
 
         // We increase by one as we want the PalletId to be kept alive on-chain
@@ -243,7 +255,6 @@ export default class Crowdloan extends CliBaseCommand {
         } catch (err) {
             return Promise.reject(err);
         }
-
     }
 
     private static async getApiPromise(provider: string): Promise<ApiPromise> {
@@ -257,20 +268,20 @@ export default class Crowdloan extends CliBaseCommand {
         }
     }
 
-    private static async parseConfig(file: string): Promise<Config> {
+    private static async parseConfig(network: string, file: string): Promise<Config> {
         try {
             const raw = fs.readFileSync(file);
             const config: Config = JSONbig.parse(raw.toString("utf-8"));
-            await Crowdloan.checkConfig(config);
+            await Crowdloan.checkConfig(network, config);
             return config;
         } catch (err) {
             return Promise.reject(err);
         }
     }
 
-    private static async checkConfig(config: Config): Promise<void> {
+    private static async checkConfig(network: string, config: Config): Promise<void> {
         // Check Config
-        if (config.crowdloans === undefined) {
+        if (config.crowdloans === undefined || config.crowdloans.length === 0) {
             return Promise.reject("Missing `Crowdloans`")
         }
         if (config.claimPallet === undefined) {
@@ -281,6 +292,25 @@ export default class Crowdloan extends CliBaseCommand {
         }
         if (config.transformation === undefined) {
             return Promise.reject("Missing `Transformation`")
+        }
+
+        // Check crowdloans
+        for (const crowdloan of config.crowdloans) {
+            if (crowdloan.network === undefined) {
+                return Promise.reject("Missing `Crowdloan.network`")
+            }
+            if (crowdloan.paraId === undefined) {
+                return Promise.reject("Missing `Crowdloan.paraId`")
+            }
+            if (crowdloan.trieIndex === undefined) {
+                return Promise.reject("Missing `Crowdloan.trieIndex`")
+            }
+            if (crowdloan.endBlock === undefined) {
+                return Promise.reject("Missing `Crowdloan.endBlock`")
+            }
+            if (crowdloan.createBlock === undefined) {
+                return Promise.reject("Missing `Crowdloan.createBlock`")
+            }
         }
 
         // Check inner claimPallet
@@ -309,26 +339,38 @@ export default class Crowdloan extends CliBaseCommand {
         }
 
         // Check transformation
-        if (config.transformation.decimalDifference === undefined) {
-            return Promise.reject("Missing `transformation.decimalDifference`")
-        }
-        if (config.transformation.conversionRate === undefined) {
-            return Promise.reject("Missing `transformation.conversionRate`")
-        }
-        if (config.transformation.earlyBirdPrct === undefined) {
-            return Promise.reject("Missing `transformation.earlyBirdPrct`")
-        }
-        if (config.transformation.earlyBirdBlock === undefined) {
-            return Promise.reject("Missing `transformation.earlyBirdBlock`")
-        }
-        if (config.transformation.earlyHourPrct === undefined) {
-            return Promise.reject("Missing `transformation.earlyHourPrct`")
-        }
-        if (config.transformation.referralUsedPrct === undefined) {
-            return Promise.reject("Missing `transformation.referralUsedPrct`")
-        }
-        if (config.transformation.referedPrct === undefined) {
-            return Promise.reject("Missing `transformation.referedPrct`")
+        if(network === 'Kusama') {
+            if (config.transformation.kusama === undefined){
+                return Promise.reject('Missing Kusama transformation config');
+            }
+            if (config.transformation.kusama.decimalDifference === undefined) {
+                return Promise.reject("Missing `transformation.decimalDifference`")
+            }
+            if (config.transformation.kusama.conversionRate === undefined) {
+                return Promise.reject("Missing `transformation.conversionRate`")
+            }
+            if (config.transformation.kusama.earlyBirdPrct === undefined) {
+                return Promise.reject("Missing `transformation.earlyBirdPrct`")
+            }
+            if (config.transformation.kusama.earlyBirdBlock === undefined) {
+                return Promise.reject("Missing `transformation.earlyBirdBlock`")
+            }
+            if (config.transformation.kusama.earlyHourPrct === undefined) {
+                return Promise.reject("Missing `transformation.earlyHourPrct`")
+            }
+            if (config.transformation.kusama.referralUsedPrct === undefined) {
+                return Promise.reject("Missing `transformation.referralUsedPrct`")
+            }
+            if (config.transformation.kusama.referedPrct === undefined) {
+                return Promise.reject("Missing `transformation.referedPrct`")
+            }
+        } else if (network === 'Polkadot') {
+            if (config.transformation.polkadot === undefined){
+                return Promise.reject('Missing Kusama transformation config');
+            }
+            // TODO: Additional checks here.
+        } else {
+            return Promise.reject("Unknown network. Aborting!");
         }
     }
 
@@ -379,169 +421,67 @@ export default class Crowdloan extends CliBaseCommand {
         }
     }
 
-    private async runTest(contributions: Map<AccountId, Balance>, tree: MerkleTree): Promise<void> {
+    private async runTest(tree: MerkleTree): Promise<void> {
         // TODO:
         this.logger.warn("Currently NO tests against pallets provided...");
     }
 
-    private async getContributions(api: ApiPromise, isFailedEvents: boolean): Promise<Map<AccountId, Balance>> {
-        const crowdloans: Array<CrowdloanSpec> = this.crwdloanCfg.crowdloans;
+    private async getContributions(network: string): Promise<Map<AccountId, Balance>> {
+        if (network === 'Kusama') {
+            const api = await Crowdloan.getApiPromise("wss://kusama.polkadot.io");
+            const codes =  await this.fetchCodesFromCloud(
+                api,
+                'centrifuge-production-x',
+                'altair_referral_codes'
+            );
 
-        let states: Map<bigint, Map<AccountId, [Balance, string]>> = new Map();
-        for (const specs of crowdloans) {
-            this.logger.debug("Specs: " + JSONbig.stringify(specs, null, '\t'));
-            const hash = await api.rpc.chain.getBlockHash(specs.endBlock);
+            api.disconnect().then().catch(err => this.logger.warn(err));
 
-            // Check if hash belongs to a block else fail here
-            try {
-                const signedBlock = await api.rpc.chain.getBlock(hash);
-            } catch (err) {
-                return Promise.reject("Could not fetch a block for the given hash. Maybe wrong number or connected to Non-Archive-Node");
-            }
-
-            let data = await Crowdloan.fetchCrowdloanState(api, specs.trieIndex, hash);
-            states.set(specs.trieIndex, data);
-            this.logger.debug("Finished fetching " + data.size + " keys for crowdloan of paraId " + specs.paraId + " with index " + specs.trieIndex);
+            return getContributionsKusama(
+                this.paraApi,
+                this.crwdloanCfg.crowdloans,
+                this.crwdloanCfg.transformation.kusama,
+                codes
+            );
+        } else if (network === 'Polkadot') {
+            // TODO: Not yet implenented
+            // return getContributionsPolkadot();
+            return Promise.reject('Polkadot not yet implemented. Aborting!');
+        } else {
+            return Promise.reject(`Unknown network ${network}. Aborting!`);
         }
-
-        if (isFailedEvents) {
-            this.logger.debug("Starting fetching failed events now...");
-            // Update the correct state here this will always be for trieIndex 31
-            if(states.has(BigInt(31))) {
-                // If state has 31, then specs also contain 31. Qed.
-                let config: CrowdloanSpec = this.crwdloanCfg.crowdloans.filter((spec) => {
-                    spec.trieIndex === BigInt(31);
-                })[0];
-
-                // @ts-ignore // We not that 31 is a key in the map due to the check above.
-                await this.updateStateFromFailedEvents(api, config, states.get(BigInt(31)));
-            } else {
-                this.logger.warn("Crowdloan with TrieIndex 31 not in states. Flag --fetch-failed-events is not effective...");
-            }
-            this.logger.debug("Finished fetching and updating with failed events.");
-        }
-
-        const contributors = await this.transformIntoContributors(api, states);
-
-        // Transform depending on input
-        return await this.transformIntoRewardee(contributors);
     }
 
-    private async transformIntoContributors(api: ApiPromise, states: Map<bigint, Map<AccountId, [Balance, string]>>): Promise<Map<AccountId, Contributor>> {
-        let previousState: Map<AccountId, [Balance, string]>;
-        if (this.crwdloanCfg.crowdloans.length > 1) {
-            let maybePreviousState = states.get(this.crwdloanCfg.crowdloans[1].trieIndex);
-
-            if (maybePreviousState === undefined) {
-                return Promise.reject("Crowdloan config indicates a crowdloan with TrieIndex " + this.crwdloanCfg.crowdloans[1].trieIndex + ". " +
-                    "But this state has not been fetched. Aborting!");
-            } else {
-                previousState = maybePreviousState;
-            }
-        } else {
-            previousState = new Map();
-        }
-
-        this.logger.debug("Fetching codes from gcloud now...");
-        let codes = await this.fetchCodesFromCloud(api);
-        this.logger.debug("Finished fetching codes from gcloud.");
-
-        let state = states.get(this.crwdloanCfg.crowdloans[0].trieIndex);
-        let contributions: Map<AccountId, Contributor> = new Map();
-        let numReferrals: Map<AccountId, Array<AccountId>> = new Map();
-
-        if (state === undefined) {
-            return Promise.reject("No latest state fetched for latest crowdloan with TrieIndex " + this.crwdloanCfg.crowdloans[1].trieIndex +
-                ". Aborting!");
-        } else {
-            for (const contributor of state.keys()) {
-                let contributionAndMemo = state.get(contributor);
-
-                if (contributionAndMemo === undefined) {
-                    return Promise.reject("Can not be undefined. Qed.");
-                } else {
-                    let codesUser= codes.get(contributor);
-
-                    if (codesUser === undefined) {
-                        codesUser = new Array<string>();
-                    }
-
-                    let referred = false;
-                    loop1:
-                        for (const [user, codesOneUser] of codes) {
-                    loop2:
-                            for (const code of codesOneUser) {
-                                if (contributionAndMemo[1] === code) {
-                                    referred = true;
-
-                                    if(numReferrals.has(user)) {
-                                        let referrals = numReferrals.get(user);
-                                        //@ts-ignore // We check this. Qed.
-                                        referrals.push(contributor);
-                                    } else {
-                                        numReferrals.set(user, Array.from([contributor]));
-                                    }
-                                    break loop1;
-                                }
-                            }
-                        }
-
-                    contributions.set(contributor, {
-                        account: contributor.toHex(),
-                        contribution: contributionAndMemo[0].toBigInt(),
-                        codes: codesUser,
-                        referred: referred,
-                        earlyHour: previousState.has(contributor),
-                        whenContributed: this.crwdloanCfg.crowdloans[0].endBlock, // We init to last block, and update later
-                        referrals: new Array(),
-                    })
-                }
-            }
-
-            // Now update the referral counts of each contributor
-            for (const [account, contributor] of contributions) {
-                    let referralsForThisAccount = numReferrals.get(account);
-                    contributor.referrals.concat((referralsForThisAccount !== undefined) ? referralsForThisAccount : new Array());
-            }
-
-            await this.updateStateWithTimestamps(api, this.crwdloanCfg.crowdloans[0], contributions);
-        }
-
-        return contributions;
-    }
-
-    private async fetchCodesFromCloud(api: ApiPromise): Promise<Map<AccountId, string[]>> {
+    private async fetchCodesFromCloud(api: ApiPromise, projectId: string, bucket: string): Promise<Map<string, AccountId>> {
         // check 1Password entry for "Altair Referral Code Bucket Credentials"
         const GOOGLE_CLOUD_PRIVATE_KEY = this.gcloudPrivateKey;
         const GOOGLE_CLOUD_CLIENT_EMAIL = this.gcloudClientEmail;
 
         type ReferralCode = {
             referralCode: string;
-            walletAddress: AccountId;
+            walletAddress: string;
         };
 
         const getReferralCodesWithAddresses = async (): Promise<ReferralCode[]> => {
             const storage = new Storage({
-                projectId: 'centrifuge-production-x',
+                projectId: projectId,
                 credentials: {
                     client_email: GOOGLE_CLOUD_CLIENT_EMAIL,
                     private_key: GOOGLE_CLOUD_PRIVATE_KEY,
                 },
             });
 
-            const referralCodeBucket = storage.bucket('altair_referral_codes');
+            const referralCodeBucket = storage.bucket(bucket);
 
             const [files] = await referralCodeBucket.getFiles();
 
             this.logger.debug('Got ' + files.length + ' files');
 
-            const promises = files.map(async file => {
+            const promises = files.map(async (file) => {
                 const content = await referralCodeBucket.file(file.name).download();
 
-
-
                 const encoded = {
-                    walletAddress: api.createType("AccountId", content[0].toString('utf8')),
+                    walletAddress: content[0].toString('utf8'),
                     referralCode: file.name.replace('.txt', ''),
                 };
 
@@ -554,16 +494,9 @@ export default class Crowdloan extends CliBaseCommand {
 
         const result = await getReferralCodesWithAddresses();
 
-        let codes: Map<AccountId, string[]> = new Map();
+        let codes: Map<string, AccountId> = new Map();
         for (const {walletAddress, referralCode} of result ){
-            if(codes.has(walletAddress)) {
-                let referralCodes = codes.get(walletAddress);
-                // @ts-ignore // we check that the entry exists
-                referralCodes.push(referralCode);
-            } else {
-                let referralCodes = Array.from([referralCode]);
-                codes.set(walletAddress, referralCodes);
-            }
+            codes.set(referralCode, api.createType("AccountId", walletAddress));
         }
 
         this.logger.debug("Fetched codes are:  " +  JSONbig.stringify(codes, null, '\t'));
@@ -571,245 +504,35 @@ export default class Crowdloan extends CliBaseCommand {
         return codes;
     }
 
-    /// This function takes Contributors class and actually generated the reward from this into for a given account
-    private async transformIntoRewardee(contributors: Map<AccountId, Contributor>): Promise<Map<AccountId, Balance>> {
-        const config = this.crwdloanCfg.transformation;
-        let rewardees: Map<AccountId, Balance> = new Map();
-
-        for(const [account, contributor] of contributors) {
-            let contribution = contributor.contribution;
-
-            if (contributor.referred) {
-                contribution += (contribution * config.referedPrct)/BigInt(100);
-            }
-
-            for(const referral of contributor.referrals) {
-                let referralContribution = contributors.get(referral);
-                if (referralContribution !== undefined) {
-                    contribution += (referralContribution.contribution * config.referralUsedPrct)/BigInt(100);
-                } else {
-                    this.logger.warn("Unreachable code. Referral account " + referral.toHuman() + " not fund in state-fetched contributions.");
-                }
-            }
-
-            if(contributor.earlyHour) {
-                // TODO: Do we provide a bonus here?
-                contribution += (contribution * config.earlyHourPrct)/BigInt(100);
-            }
-
-            if (contributor.whenContributed <= config.earlyBirdBlock) {
-                contribution += (contribution * config.earlyBirdPrct)/BigInt(100);
-            }
-
-            let afterConversion = config.decimalDifference * contribution;
-            rewardees.set(account, this.paraApi.createType("Balance", afterConversion));
-        }
-
-        return rewardees;
-    }
-
-    private async generateContributions(api: ApiPromise): Promise<Map<AccountId, Balance>> {
-        const maxContributions = 1000000000000000; // = 10,000 KSM. This maxes the amount we will have as AIR or CFT to 10,000 also
-        let contributions = 0;
+    private async generateContributions(): Promise<Map<AccountId, Balance>> {
+        const maxContributions = BigInt(100_000_000_000_000_000_000_000); // 100,000. This maxes the amount
+        let contributions = BigInt(0);
         let contributors: Map<AccountId, Balance> = new Map();
 
         const keyring = new Keyring({ type: 'sr25519' });
         let counter = 0;
 
-        while(contributions <=  Math.floor(0.9 * maxContributions)) {
-            let amount = Math.floor(Math.random() * maxContributions/10);
+        while(contributions <= (BigInt(9) * maxContributions)/BigInt(100)) {
+            // TODO: DOES THIS EVEN WORK?
+            let amount = (BigInt(Math.random()*100) * maxContributions/BigInt(1000));
 
             if(amount + contributions <= maxContributions) {
                 contributions += amount;
 
                 counter += 1;
                 let keypair = keyring.addFromUri(`TestAccount${counter}`);
-                let account =  api.createType("AccountId", compactAddLength(keypair.addressRaw));
+                let account =  this.paraApi.createType("AccountId", compactAddLength(keypair.addressRaw));
 
                 // Fill in storage which we will need to sign stuff later on
-                this.syntheticAccounts.set(account, keypair);
+                this.syntheticAccounts.set(account, [keypair, amount]);
 
                 // Transform to an actual contribution
                 // We do NOT calculate referral or any other rewards here. As this is not part of the testing
-                contributors.set(account, api.createType("Balance", BigInt(amount) * this.crwdloanCfg.transformation.decimalDifference));
+                contributors.set(account, this.paraApi.createType("Balance", amount));
             }
         }
 
         return contributors
-    }
-
-    private async updateStateFromFailedEvents(api: ApiPromise, config: CrowdloanSpec, state: Map<AccountId, [Balance, string]>): Promise<void> {
-        let currentBlock = config.createBlock;
-        this.logger.debug("Fetching block with number " + currentBlock);
-
-        while(currentBlock <= config.endBlock) {
-            this.logger.debug("Fetching block with number " + currentBlock);
-
-            try {
-                const blockHash = await api.rpc.chain.getBlockHash(currentBlock);
-                const signedBlock = await api.rpc.chain.getBlock(blockHash);
-
-                const allRecords = await api.query.system.events.at(signedBlock.block.header.hash);
-
-                signedBlock.block.extrinsics.forEach((data, index) => {
-                    if (data.method.section === "utility" && data.method.method === "batch") {
-                        updateViaBatch(allRecords, data, index, currentBlock, state, config.paraId)
-                            .catch(err => this.logger.warn(err));
-                    }
-                });
-
-                currentBlock += BigInt(1);
-            } catch (err) {
-                return Promise.reject(err);
-            }
-        }
-
-        async function updateViaBatch(
-            allRecords: Array<EventRecord>,
-            ext: GenericExtrinsic,
-            index: number,
-            at: bigint,
-            state: Map<AccountId, [Balance, string]>,
-            id: bigint
-        ) {
-            // Not catch the once that have failed
-            const events = allRecords
-                .filter(({ phase }) =>
-                    phase.isApplyExtrinsic &&
-                    phase.asApplyExtrinsic.eq(index)
-                )
-                .map((event) => {
-                    if (event.event.section === "utility" && event.event.method === "BatchInterrupted") {
-                        return event.event
-                    }
-                })
-                .filter((entry) => entry !== undefined);
-
-            for(const event of events) {
-                // @ts-ignore
-                let indexExtInBatch = event["data"][0].toBigInt();
-
-                // Check if the failed extrinisc in the batch was an AddMemo call
-                if(isAddMemo(ext, indexExtInBatch)) {
-                    // @ts-ignore
-                    let call = ext["method"]["args"][0][indexExtInBatch];
-
-                    // get paraId here
-                    let paraId =  call["args"][0].toBigInt();
-
-                    if (paraId === id) {
-                        try {
-                            let referalCode = bytesToString(call["args"][1].toU8a(true)).replace(" ", "").split(":")[1];
-                            // Get the account from the signature
-                            // This cuts off the "0x" and some prefix of 2 bytes, which is there for codec reasons...
-                            let account = api.createType("AccountId", "0x" + ext.signer.toHex().slice(4));
-
-                            let contributor = state.get(account);
-
-                            if (contributor !== undefined) {
-                                contributor[1] = referalCode;
-                            } else {
-                                return Promise.reject("Failed to update Account " +  account.toHuman() + " with Memo: " + referalCode);
-                            }
-                        } catch (err) {
-                            return Promise.reject(err);
-                        }
-                    }
-                }
-            }
-        }
-
-        function bytesToString(bytes: Array<number> | Uint8Array): string {
-            let buff = Array.from(new Uint16Array(bytes));
-            let asString = String.fromCharCode.apply(null, buff);
-            return asString;
-        }
-
-        function isAddMemo(ext: GenericExtrinsic, index: number): boolean {
-            // We know that the ext is a utility.batch call
-            // Check here if we fail due to "MemoTooLarge"
-            // @ts-ignore
-            let call = ext["method"]["args"][0][index];
-
-            let isAddMemo = false;
-            if (call["method"] === "addMemo") {
-                isAddMemo = true;
-            }
-
-            return isAddMemo;
-        }
-    }
-
-    private async updateStateWithTimestamps(api: ApiPromise, config: CrowdloanSpec, state: Map<AccountId, Contributor>): Promise<void> {
-        let currentBlock = config.createBlock;
-        let updated: Map<AccountId, boolean> = new Map();
-
-        while(currentBlock <= config.endBlock) {
-            try {
-                const blockHash = await api.rpc.chain.getBlockHash(currentBlock);
-                const signedBlock = await api.rpc.chain.getBlock(blockHash);
-
-                const allRecords = await api.query.system.events.at(signedBlock.block.header.hash);
-
-                signedBlock.block.extrinsics.forEach((data, index) => {
-                    if(data.method.section === "crowdloan") {
-                        updateViaDirect(allRecords, index, currentBlock, state, updated)
-                            .catch((err) => {
-                                this.logger.error(err);
-                                throw new Error("Fatal: Found event with contribution that was not in the fetched state from storage. Aborting!");
-                            });
-                    }
-                });
-
-                currentBlock += BigInt(1);
-            } catch (err) {
-                return Promise.reject(err);
-            }
-        }
-
-        async function updateViaDirect(
-            allRecords: Array<EventRecord>,
-            index: number,
-            at: bigint,
-            state: Map<AccountId, Contributor>,
-            updated: Map<AccountId, boolean>
-        ) {
-            // filter the specific events based on the phase and then the
-            // index of our extrinsic in the block
-            const events = allRecords
-                .filter(({ phase }) =>
-                    phase.isApplyExtrinsic &&
-                    phase.asApplyExtrinsic.eq(index)
-                )
-                .map((event) => {
-                    if (event.event.section === "crowdloan") {
-                        return event.event
-                    }
-                })
-                .filter((entry) => entry !== undefined);
-
-            for (const event of events) {
-                // @ts-ignore // We know, due to the filter, that events does NOT contain undefined
-                if (event.method === "Contributed") {
-                    //@ts-ignore
-                    if (event["data"][1].toBigInt() === BigInt(PARA_ID)) {
-                        //@ts-ignore
-                        let account = api.createType("AccountId", event["data"][0].toHex());
-
-                        if (!updated.has(account)) {
-                            updated.set(account, true);
-                            let contributor = state.get(account);
-
-                            if (contributor === undefined) {
-                                return Promise.reject("Account " + account.toHuman() + " is found in Events but not in the fetched state.");
-                            } else {
-                                contributor.whenContributed = at;
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     private static async generateMerkleTree(contributions: Map<AccountId, Balance>): Promise<MerkleTree> {
@@ -885,29 +608,24 @@ export default class Crowdloan extends CliBaseCommand {
         };
     }
 
-    private static async fetchCrowdloanState(api: ApiPromise, trieIndex: bigint, at: Hash): Promise<Map<AccountId, [Balance, string]>> {
-        let crowdloanData = new Map();
-        let levels: Array<[string | Uint8Array, Hasher]> = [
-            [Uint8Array.from(Array.from(await toUtf8ByteArray("crowdloan")).concat(Array.from(LeU32Bytes(trieIndex)))), Hasher.Blake2_256],
-        ];
+    private static async parseMerkleTree(filePath: string): Promise<MerkleTree> {
+        try {
+            let file = fs.readFileSync(filePath);
+            let tree: MerkleTree = JSONbig.parse(file.toString());
 
-        const key = await createDefaultChildStorageKey(api, levels);
-        const contributions = await fetchChildState(api, key, at);
-
-        if(contributions.length > 0) {
-            crowdloanData.set(trieIndex, new Map());
-            let data = crowdloanData.get(trieIndex);
-
-            for (const contr of contributions) {
-                //@ts-ignore
-                const account = api.createType("AccountId", "0x" + contr[0].toHex().slice(-64));
-                //@ts-ignore
-                const contributionAndMemo: [Balance, Uint8Array] = api.createType("(Balance, Vec<u8>)", contr[1]);
-
-                crowdloanData.set(account, [contributionAndMemo[0], fromUtf8ByteArray(contributionAndMemo[1])])
+            if (tree.rootHash === undefined) {
+                return Promise.reject("No rootHash found in parsed MerkleTree")
             }
-        }
+            if (tree.data === undefined) {
+                return Promise.reject("No data found in parsed MerkleTree")
+            }
+            if (tree.tree === undefined) {
+                return Promise.reject("No tree found in parsed MerkleTree")
+            }
 
-        return crowdloanData
+            return tree;
+        } catch (err) {
+            return Promise.reject(err);
+        }
     }
 }
