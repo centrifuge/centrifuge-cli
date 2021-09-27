@@ -1,6 +1,7 @@
 import {AccountId} from "@polkadot/types/interfaces";
 
 export interface Config {
+    fundingAccount: string
     // The first one is regarded as the current crowdloan
     // All further specs will be seens as previous loans
     crowdloans: Array<CrowdloanSpec>
@@ -44,19 +45,23 @@ export interface KusamaTransformConfig {
     conversionRate: bigint,
     earlyBirdPrct: bigint,
     earlyBirdBlock: bigint,
-    earlyHourPrct: bigint,
-    referralUsedPrct: bigint,
+    prevCrwdLoanPrct: bigint,
     referedPrct: bigint,
 }
 
 export interface Credentials {
     gcloudPrivateKey: string,
     gcloudClientEmail: string,
-    execPwd: string
+    executorURI: string
 }
 
 export interface MerkleTree {
     rootHash: string,
     tree: Array<Array<string>>
     data: Array<{account: string, contribution: bigint}>
+}
+
+export interface Proof {
+    leafHash: string,
+    sortedHashes: Array<string>,
 }

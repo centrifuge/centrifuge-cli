@@ -2,21 +2,63 @@ import {ApiPromise} from "@polkadot/api";
 import {CrowdloanSpec, KusamaTransformConfig, TransformConfig} from "./interfaces";
 import {AccountId, Balance} from "@polkadot/types/interfaces";
 import * as Crowdloan from "../commands/crowdloan";
+import {Logger as TsLogger} from 'tslog';
+
+const axios = require('axios').default;
 
 export async function getContributions(
     paraApi: ApiPromise,
     crowdloans: Array<CrowdloanSpec>,
     config: KusamaTransformConfig,
-    codes: Map<string, AccountId>
+    codes: Map<string, AccountId>,
+    logger: TsLogger
 ): Promise<Map<AccountId, Balance>> {
+    // Try fetching from web
+    let contributors:  Map<AccountId, Array<Contributor>>;
 
-    // Fetch previous 250 from kusama, generate prevCorwdloan as result
+    try {
+        contributors = await fetchFromWebService(paraApi);
+    } catch (err) {
+        logger.fatal("Could not fetch from webservice. Error: \n" + err);
+        return Promise.reject(err);
+    }
 
-    // Fetch all events and also failed like in script
-    // Create Contributor structs from this
+    return await transformIntoRewardee(paraApi, config, codes, contributors);
+}
 
-    //return await transformIntoRewardee(paraApi, config, codes, contributors);
-    return new Map();
+async function fetchFromWebService(api: ApiPromise): Promise<Map<AccountId, Array<Contributor>>> {
+    let contributions: Map<AccountId, Array<Contributor>> = new Map();
+
+    try {
+      let response = await axios.get('http://localhost:6464/contributions');
+
+      if (response !== undefined && response.status === 200 ) {
+          for (const noType of response.data) {
+              let account = noType.account;
+              const contributor: Contributor = {
+                  account: noType.account,
+                  contribution: BigInt(noType.contribution),
+                  whenContributed: BigInt(noType.blockNumber),
+                  memo: noType.referralCode,
+                  first250PrevCrowdloan: BigInt(noType.amountFirst250PrevCrwdloan),
+                  extrinsic: {
+                      block: BigInt(noType.extrinsic.blockNumber),
+                      index: Number(noType.extrinsic.index)
+                  }
+              };
+
+              contributions.has(account)
+                  ? contributions.get(account)?.push(contributor)
+                  : contributions.set(account, Array.from([contributor]));
+          }
+      } else {
+          return Promise.reject("Failure fetching data from webservice. Response " + JSON.stringify(response, null, '\t'));
+      }
+    } catch (err) {
+        return Promise.reject(err);
+    }
+
+    return contributions;
 }
 
 /// This function takes Contributors class and actually generated the reward from this into for a given account
@@ -24,12 +66,13 @@ async function transformIntoRewardee(
     api: ApiPromise,
     config: KusamaTransformConfig,
     codesToAccount: Map<string, AccountId>,
-    prevCrowdloan: Map<AccountId, Balance>,
     contributors: Map<AccountId, Array<Contributor>>
 ): Promise<Map<AccountId, Balance>> {
     let rewardees: Map<AccountId, Balance> = new Map();
 
     for (const [account, contributions] of contributors) {
+        let first250Added = false;
+
         for (const contributor of contributions) {
             let contribution = contributor.contribution;
 
@@ -50,13 +93,14 @@ async function transformIntoRewardee(
                 }
             }
 
-            if (prevCrowdloan.has(account)) {
-                //@ts-ignore // We check above in if
-                contribution += (prevCrowdloan.get(account).toBigInt() * config.earlyHourPrct) / BigInt(100);
-            }
-
             if (contributor.whenContributed <= config.earlyBirdBlock) {
                 contribution += (contribution * config.earlyBirdPrct) / BigInt(100);
+            }
+
+            // We only add this bonus once
+            if (contributor.first250PrevCrowdloan !== BigInt(0) && !first250Added) {
+                contribution += (contributor.first250PrevCrowdloan * config.prevCrwdLoanPrct) / BigInt(100);
+                first250Added = true;
             }
 
             let afterConversion = config.decimalDifference * contribution;
@@ -79,6 +123,7 @@ interface Contributor {
     contribution: bigint,
     memo: string,
     whenContributed: bigint,
+    first250PrevCrowdloan: bigint,
     extrinsic: {
         block: bigint,
         index: number,

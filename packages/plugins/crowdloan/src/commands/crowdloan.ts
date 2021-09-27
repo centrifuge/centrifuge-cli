@@ -8,16 +8,18 @@ import {compactAddLength} from "@polkadot/util";
 import { blake2AsHex } from "@polkadot/util-crypto";
 import {DownloadResponse, Storage} from "@google-cloud/storage";
 import * as fs from "fs";
+import {cryptoWaitReady} from "@polkadot/util-crypto"
 import {getContributions as getContributionsKusama} from "../crowdloan/kusama";
 import {getContributions as getContributionsPolkadot} from "../crowdloan/polkadot";
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
 import {fetchChildState, createDefaultChildStorageKey, Hasher} from "@centrifuge-cli/sp-state-fetch";
-import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray} from "@centrifuge-cli/util"
+import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray, hexDecode} from "@centrifuge-cli/util"
 import {CliBaseCommand} from "@centrifuge-cli/core";
 
-import {Config, CrowdloanSpec, TransformConfig, MerkleTree, Credentials} from "../crowdloan/interfaces";
+import {Config, CrowdloanSpec, TransformConfig, MerkleTree, Credentials, Proof} from "../crowdloan/interfaces";
+import {RegistryTypes} from "@polkadot/types/types";
 
 
 export default class Crowdloan extends CliBaseCommand {
@@ -33,8 +35,6 @@ export default class Crowdloan extends CliBaseCommand {
     // The account that will initialize the pallets and also fund the reward pallet (sudo account)
     executor!: KeyringPair
 
-    // These three one will be filled during parsing of credentials
-    execPwd!: string
     gcloudPrivateKey!: string
     gcloudClientEmail!: string
 
@@ -57,7 +57,7 @@ export default class Crowdloan extends CliBaseCommand {
             char: 'p',
             description: 'the networks ws-endpoint of the para chain',
             // TODO: remove and add required after testing
-            default: 'wss://fullnode-collator.charcoal.centrifuge.io'
+            default: 'ws://localhost:9946'
         }),
         'config': flags.string({
             description: 'Path to a JSON-file that specifies the config for the crowdloan-modules and crowdloan data from relay-chain',
@@ -73,17 +73,12 @@ export default class Crowdloan extends CliBaseCommand {
         }),
         'tree-output': flags.string({
             description: 'If present, the cli will generate a JSON file containing the generated merkle tree. The argument is the path were tree is stored.',
-            default: './outputs'
+            default: './packages/cli/outputs'
         }),
         // TODO: Implement this feature
         'run-from-tree': flags.string({
             description: 'Allows to initialize the pallets with a tree previsouly created with this script',
             exclusive: ['simulate, dry-run, tree-output']
-        }),
-        'exec': flags.string({
-            char: 'e',
-            description: 'the path to the JSON-file of the account, that will initialize the crowdloan pallets on the parachain side',
-            required: true
         }),
         'simulate':  flags.boolean({
             description: 'if present, the data from the contributions will be simulated and not fetched from a relay chain',
@@ -103,16 +98,16 @@ export default class Crowdloan extends CliBaseCommand {
         try {
             const {args, flags} = this.parse(Crowdloan)
 
-            this.paraApi = await Crowdloan.getApiPromise(flags.para);
+            this.paraApi = await Crowdloan.getApiPromise(flags.para, {
+                RootHashOf: 'Hash',
+                TrieIndex: 'u32',
+            });
 
             this.crwdloanCfg = await Crowdloan.parseConfig(flags.relay, flags.config);
 
             this.logger.debug(this.crwdloanCfg)
 
-            await this.parseCredentials(flags.creds, flags.simulate);
-
-            this.executor = await this.parseAccountFromJson(flags.exec);
-
+            await this.parseCredentials(flags.creds);
 
             let contributions: Map<AccountId, Balance>;
             if (flags['run-from-tree'] === undefined) {
@@ -121,7 +116,7 @@ export default class Crowdloan extends CliBaseCommand {
                     : await this.getContributions(flags.relay);
 
                 if (flags.simulate) {
-                    let file = './outputs/CROWDLOAN-syntheticContributors-' + Date.now() + '.json'
+                    let file = './packages/cli/outputs/CROWDLOAN-syntheticContributors-' + Date.now() + '.json'
                     let asArray = new Array();
                     this.syntheticAccounts.forEach(([keyPair, amount], id) => asArray.push({
                         account: id.toHex(),
@@ -129,7 +124,7 @@ export default class Crowdloan extends CliBaseCommand {
                         contribution: amount
                     }));
 
-                    if (fs.existsSync('./outputs')) {
+                    if (fs.existsSync('./packages/cli/outputs')) {
                         fs.writeFile(file, JSONbig.stringify(asArray, null, '\t'), err => {
                             if (err) {
                                 this.logger.error("Error writing synthetic contributors to file. \n" + err)
@@ -165,7 +160,7 @@ export default class Crowdloan extends CliBaseCommand {
 
             const funding: Balance = await this.calculateFunding(tree);
 
-            const { data: execBalance } = await this.paraApi.query.system.account(this.executor.address);
+            const { data: execBalance } = await this.paraApi.query.system.account(this.crwdloanCfg.fundingAccount);
 
             if (!flags["dry-run"]) {
                 if (!(funding.toBigInt() <= execBalance.free.toBigInt())) {
@@ -177,8 +172,6 @@ export default class Crowdloan extends CliBaseCommand {
 
                 if(flags.test && flags.simulate) {
                     await this.runTest(tree);
-                } else {
-                    throw new Error("Unreachable Code...");
                 }
             } else {
                 this.logger.info("The RewardPallet needs a funding of at least " + funding.toHuman());
@@ -204,18 +197,17 @@ export default class Crowdloan extends CliBaseCommand {
 
     }
 
-    private async parseCredentials(filePath: string, isSimulate: boolean) {
+    private async parseCredentials(filePath: string) {
         try {
             let file = fs.readFileSync(filePath);
             let credentials: Credentials = JSONbig.parse(file.toString());
 
-        if (credentials.execPwd === undefined) {
-            return Promise.reject("Missing password for executing account.");
-        } else {
-            this.execPwd = credentials.execPwd;
-        }
+            if (credentials.executorURI === undefined) {
+                return Promise.reject("Missing URI for executor account");
+            }
 
-        if (!isSimulate) {
+            this.executor = await this.parseAccountFromURI(credentials.executorURI);
+
             if (credentials.gcloudPrivateKey === undefined) {
                 return Promise.reject("Missing priavte key for gcloud");
             } else {
@@ -226,7 +218,7 @@ export default class Crowdloan extends CliBaseCommand {
             } else {
                 this.gcloudClientEmail = credentials.gcloudClientEmail;
             }
-        }
+
 
         } catch (err) {
             return Promise.reject(err);
@@ -244,25 +236,27 @@ export default class Crowdloan extends CliBaseCommand {
         return this.paraApi.createType("Balance", funding + BigInt(1));
     }
 
-    private async parseAccountFromJson(filePath: string): Promise<KeyringPair> {
-        let keyring = new Keyring();
+    private async parseAccountFromURI(uri: string): Promise<KeyringPair> {
+        const keyring = new Keyring({type: 'sr25519'});
+
+        if(!await cryptoWaitReady()) {
+            return Promise.reject("Could not initilaize WASM environment for crypto. Aborting!");
+        }
 
         try {
-            let file = fs.readFileSync(filePath);
-            let executor = keyring.addFromJson(JSONbig.parse(file.toString()));
-
-            executor.unlock(this.execPwd);
+            let executor = keyring.addFromUri(uri);
             return executor;
         } catch (err) {
             return Promise.reject(err);
         }
     }
 
-    private static async getApiPromise(provider: string): Promise<ApiPromise> {
+    private static async getApiPromise(provider: string, options?: RegistryTypes): Promise<ApiPromise> {
         try {
             const wsProvider = new WsProvider(provider);
             return  await ApiPromise.create({
-                provider: wsProvider
+                provider: wsProvider,
+                types: options
             });
         } catch (err) {
             return Promise.reject(err)
@@ -282,6 +276,9 @@ export default class Crowdloan extends CliBaseCommand {
 
     private static async checkConfig(network: string, config: Config): Promise<void> {
         // Check Config
+        if (config.fundingAccount === undefined) {
+            return Promise.reject("Missing `FundingAccount`")
+        }
         if (config.crowdloans === undefined || config.crowdloans.length === 0) {
             return Promise.reject("Missing `Crowdloans`")
         }
@@ -356,18 +353,15 @@ export default class Crowdloan extends CliBaseCommand {
             if (config.transformation.kusama.earlyBirdBlock === undefined) {
                 return Promise.reject("Missing `transformation.earlyBirdBlock`")
             }
-            if (config.transformation.kusama.earlyHourPrct === undefined) {
-                return Promise.reject("Missing `transformation.earlyHourPrct`")
-            }
-            if (config.transformation.kusama.referralUsedPrct === undefined) {
-                return Promise.reject("Missing `transformation.referralUsedPrct`")
+            if (config.transformation.kusama.prevCrwdLoanPrct === undefined) {
+                return Promise.reject("Missing `transformation.prevCrwdLoanPrct`")
             }
             if (config.transformation.kusama.referedPrct === undefined) {
                 return Promise.reject("Missing `transformation.referedPrct`")
             }
         } else if (network === 'Polkadot') {
             if (config.transformation.polkadot === undefined){
-                return Promise.reject('Missing Kusama transformation config');
+                return Promise.reject('Missing Polkadot transformation config');
             }
             // TODO: Additional checks here.
         } else {
@@ -376,43 +370,63 @@ export default class Crowdloan extends CliBaseCommand {
     }
 
     private async initializePallets(tree: MerkleTree, funding: bigint): Promise<void> {
-        let rewardPalletAddr = await this.paraApi.consts.crowdloanReward.palletId.toHex();
+        const palletAddressString = await hexEncode("modl")
+            + (await this.paraApi.consts.crowdloanReward.palletId).toHex().slice(2);
+        const maybeFull32Bytes = Array.from(await hexDecode(palletAddressString));
+        while (maybeFull32Bytes.length <= 32) {
+            maybeFull32Bytes.push(0);
+        }
+        let rewardPalletAddr = this.paraApi.createType("AccountId", compactAddLength(Uint8Array.from(maybeFull32Bytes)));
 
         let finalized = false;
-        let currentBlock = (await this.paraApi.rpc.chain.getHeader()).number.toBigInt();
+
+        let startBlock = (await this.paraApi.rpc.chain.getHeader()).number.toBigInt();
+
+        //@ts-ignore
+        const rootHash = this.paraApi.createType("RootHashOf", tree.rootHash);
+        const fundingAccount = this.paraApi.createType("AccountId", this.crwdloanCfg.fundingAccount);
 
         // Three extrinsics
         // 1. init pallet claim
         // 2. init pallet reward
         // 3. fund pallet reward
-        let unsub = await this.paraApi.tx.sudo.sudo(
-            this.paraApi.tx.utility.batchAll([
-                this.paraApi.tx.crowdloanClaim.initialize(
-                    tree.rootHash,
-                    this.crwdloanCfg.claimPallet.locketAt,
-                    this.crwdloanCfg.claimPallet.index,
-                    this.crwdloanCfg.claimPallet.leaseStart,
-                    this.crwdloanCfg.claimPallet.leasePeriod
-                ),
-                this.paraApi.tx.crowdloanReward.initialize(
-                    this.crwdloanCfg.rewardPallet.directPayoutRatio,
-                    this.crwdloanCfg.rewardPallet.vestingPeriod,
-                    this.crwdloanCfg.rewardPallet.vestingStart,
-                ),
-                this.paraApi.tx.balances.transfer(
-                    rewardPalletAddr,
-                    funding
-                )
-            ])
-        ).signAndSend(this.executor, (result) => {
-            if (result.status.isFinalized) {
-                finalized = true;
-                unsub();
-            }
-        });
+        const { nonce: nonceT } = await this.paraApi.query.system.account(this.executor.address);
+        const nonce = nonceT.toBigInt();
 
+        try {
+            let unsubClaimInit = await this.paraApi.tx.sudo.sudo(
+                this.paraApi.tx.utility.batchAll([
+                    this.paraApi.tx.crowdloanClaim.initialize(
+                        rootHash,
+                        this.crwdloanCfg.claimPallet.locketAt,
+                        this.crwdloanCfg.claimPallet.index,
+                        this.crwdloanCfg.claimPallet.leaseStart,
+                        this.crwdloanCfg.claimPallet.leasePeriod
+                    ),
+                    this.paraApi.tx.crowdloanReward.initialize(
+                        this.crwdloanCfg.rewardPallet.directPayoutRatio,
+                        this.crwdloanCfg.rewardPallet.vestingPeriod,
+                        this.crwdloanCfg.rewardPallet.vestingStart,
+                    ),
+                    this.paraApi.tx.balances.forceTransfer(
+                        fundingAccount,
+                        rewardPalletAddr,
+                        funding
+                    )
+                ])
+            ).signAndSend(this.executor, {nonce: nonce}, (result) => {
+                if (result.status.isFinalized) {
+                    finalized = true;
+                    unsubClaimInit();
+                }
+            });
+        } catch (err) {
+            this.logger.error("Error: \n" + err);
+        }
+
+        let currentBlock = (await this.paraApi.rpc.chain.getHeader()).number.toBigInt();
         // We wait either till it is finalized or for 2 minutes -> 20*6s
-        while (!finalized || currentBlock <= currentBlock + BigInt(20)) {
+        while (!finalized || currentBlock <= startBlock + BigInt(2)) {
             await new Promise(r => setTimeout(r, 3000));
             currentBlock = (await this.paraApi.rpc.chain.getHeader()).number.toBigInt();
         }
@@ -426,6 +440,8 @@ export default class Crowdloan extends CliBaseCommand {
         // TODO:
         this.logger.warn("Currently NO tests against pallets provided...");
     }
+
+
 
     private async getContributions(network: string): Promise<Map<AccountId, Balance>> {
         if (network === 'Kusama') {
@@ -442,7 +458,8 @@ export default class Crowdloan extends CliBaseCommand {
                 this.paraApi,
                 this.crwdloanCfg.crowdloans,
                 this.crwdloanCfg.transformation.kusama,
-                codes
+                codes,
+                this.logger.getChildLogger({name: "Crowdloan - Kusama"})
             );
         } else if (network === 'Polkadot') {
             // TODO: Not yet implenented
@@ -485,7 +502,7 @@ export default class Crowdloan extends CliBaseCommand {
 
             const encoded = {
                 walletAddress: api.createType("AccountId", content[0].toString('utf8')),
-                referralCode: file.name.replace('.txt', ''),
+                referralCode: file.name.replace('.txt', '').slice(2),
             };
             counter++;
             this.logger.debug("Downloaded: " + counter + " of " + files.length + " \n    "
@@ -503,16 +520,15 @@ export default class Crowdloan extends CliBaseCommand {
     }
 
     private async generateContributions(): Promise<Map<AccountId, Balance>> {
-        const maxContributions = BigInt(100_000_000_000_000_000_000_000); // 100,000. This maxes the amount
+        const maxContributions = BigInt(1_000_000_000_000_000_000_000_000); // 1_000_000 DAIR. This maxes the amount
         let contributions = BigInt(0);
         let contributors: Map<AccountId, Balance> = new Map();
 
         const keyring = new Keyring({ type: 'sr25519' });
         let counter = 0;
 
-        while(contributions <= (BigInt(9) * maxContributions)/BigInt(100)) {
-            // TODO: DOES THIS EVEN WORK?
-            let amount = (BigInt(Math.random()*100) * maxContributions/BigInt(1000));
+        while(contributions <= (BigInt(90) * maxContributions)/BigInt(100)) {
+            let amount = ((BigInt(Math.floor(Math.random()*10)) * maxContributions)/BigInt(10000));
 
             if(amount + contributions <= maxContributions) {
                 contributions += amount;
@@ -600,7 +616,7 @@ export default class Crowdloan extends CliBaseCommand {
         }
 
         return {
-            rootHash: tree[0],
+            rootHash: tree[0][0],
             tree: tree.slice(1),
             data: sortedData,
         };
