@@ -1,53 +1,45 @@
 import {toUtf8ByteArray} from "./string";
 
-export async function hexEncode(input: string | Array<number> | Uint8Array ): Promise<string> {
+export function hexEncode(input: string | Array<number> | Uint8Array ): string {
     let hex: Array<string> = [];
 
     let bytesArray;
 
     if(typeof input === "string") {
         try {
-            bytesArray = Array.from(await toUtf8ByteArray(input));
+            bytesArray = Array.from(toUtf8ByteArray(input));
         } catch (err) {
-           return Promise.reject("String with non UTF-8 characters");
+            throw new Error("String with non UTF-8 characters");
         }
     } else if (input instanceof Array) {
         bytesArray = input;
     } else if (input instanceof Uint8Array) {
         bytesArray = Array.from(input);
     } else {
-        return Promise.reject("Unreachable code");
+        throw new Error("Unreachable code");
     }
 
     for (let byte of bytesArray) {
-        try {
-            let val =  ('0' + (byte & 0xFF).toString(16)).slice(-2);
-            hex.push(val)
-        } catch (err) {
-            return Promise.reject(err);
-        }
+        let val =  ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        hex.push(val)
     }
 
     return hex.join('')
 }
 
-export async function hexDecode(input: string): Promise<Uint8Array> {
+export function hexDecode(input: string): Uint8Array {
     if (input.length % 2 !== 0) {
-        return Promise.reject("Input string must have an even length");
+       throw new Error("Input string must have an even length");
     }
 
     const numBytes = input.length / 2;
     let byteArray = new Uint8Array(numBytes);
 
     for (let i = 0; i < numBytes; i++) {
-        try {
-            if (!isHex(input.substr(i * 2,1)) || !isHex(input.substr((i * 2) + 1, 1))){
-                return Promise.reject("Non hexadecimal input in string");
-            } else {
-                byteArray[i] = parseInt(input.substr(i * 2, 2), 16);
-            }
-        } catch (err) {
-            return Promise.reject(err)
+        if (!isHex(input.substr(i * 2,1)) || !isHex(input.substr((i * 2) + 1, 1))){
+            throw new Error("Non hexadecimal input in string");
+        } else {
+            byteArray[i] = parseInt(input.substr(i * 2, 2), 16);
         }
     }
 

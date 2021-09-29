@@ -65,3 +65,9 @@ export interface Proof {
     leafHash: string,
     sortedHashes: Array<string>,
 }
+
+export interface Signature {
+    signer: string,
+    msg: Uint8Array,
+    signature: Uint8Array,
+}

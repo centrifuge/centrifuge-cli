@@ -3,7 +3,7 @@ import {IConfig} from "@oclif/config";
 import {ApiPromise, WsProvider, Keyring} from "@polkadot/api";
 import {AccountId, Balance, EventRecord, Hash} from "@polkadot/types/interfaces";
 import {KeyringPair} from "@polkadot/keyring/types";
-import {GenericExtrinsic} from "@polkadot/types";
+import {GenericExtrinsic, Json} from "@polkadot/types";
 import {compactAddLength} from "@polkadot/util";
 import { blake2AsHex } from "@polkadot/util-crypto";
 import {DownloadResponse, Storage} from "@google-cloud/storage";
@@ -15,10 +15,18 @@ import {getContributions as getContributionsPolkadot} from "../crowdloan/polkado
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
 import {fetchChildState, createDefaultChildStorageKey, Hasher} from "@centrifuge-cli/sp-state-fetch";
-import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray, hexDecode} from "@centrifuge-cli/util"
+import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray, hexDecode, LeU64Bytes} from "@centrifuge-cli/util"
 import {CliBaseCommand} from "@centrifuge-cli/core";
 
-import {Config, CrowdloanSpec, TransformConfig, MerkleTree, Credentials, Proof} from "../crowdloan/interfaces";
+import {
+    Config,
+    CrowdloanSpec,
+    TransformConfig,
+    MerkleTree,
+    Credentials,
+    Proof,
+    Signature
+} from "../crowdloan/interfaces";
 import {RegistryTypes} from "@polkadot/types/types";
 
 
@@ -101,6 +109,12 @@ export default class Crowdloan extends CliBaseCommand {
             this.paraApi = await Crowdloan.getApiPromise(flags.para, {
                 RootHashOf: 'Hash',
                 TrieIndex: 'u32',
+                RelayChainAccountId: 'AccountId',
+                ParachainAccountIdOf: 'AccountId',
+                Proof: {
+                    leafHash: 'Hash',
+                    sortedHashes: 'Vec<Hash>'
+                }
             });
 
             this.crwdloanCfg = await Crowdloan.parseConfig(flags.relay, flags.config);
@@ -168,7 +182,7 @@ export default class Crowdloan extends CliBaseCommand {
                     throw new Error("Exec has " + execBalance.free.toHuman() + ". This is an insufficient balance. Needs " + additional.toHuman() + " more.")
                 }
 
-                await this.initializePallets(tree, funding.toBigInt());
+                //await this.initializePallets(tree, funding.toBigInt());
 
                 if(flags.test && flags.simulate) {
                     await this.runTest(tree);
@@ -240,7 +254,7 @@ export default class Crowdloan extends CliBaseCommand {
         const keyring = new Keyring({type: 'sr25519'});
 
         if(!await cryptoWaitReady()) {
-            return Promise.reject("Could not initilaize WASM environment for crypto. Aborting!");
+            return Promise.reject("Could not initialize WASM environment for crypto. Aborting!");
         }
 
         try {
@@ -376,28 +390,21 @@ export default class Crowdloan extends CliBaseCommand {
         while (maybeFull32Bytes.length <= 32) {
             maybeFull32Bytes.push(0);
         }
-        let rewardPalletAddr = this.paraApi.createType("AccountId", compactAddLength(Uint8Array.from(maybeFull32Bytes)));
+        const rewardPalletAddr = this.paraApi.createType("AccountId", Uint8Array.from(maybeFull32Bytes));
+        const fundingAccount = this.paraApi.createType("AccountId", this.crwdloanCfg.fundingAccount);
 
         let finalized = false;
-
         let startBlock = (await this.paraApi.rpc.chain.getHeader()).number.toBigInt();
-
-        //@ts-ignore
-        const rootHash = this.paraApi.createType("RootHashOf", tree.rootHash);
-        const fundingAccount = this.paraApi.createType("AccountId", this.crwdloanCfg.fundingAccount);
 
         // Three extrinsics
         // 1. init pallet claim
         // 2. init pallet reward
         // 3. fund pallet reward
-        const { nonce: nonceT } = await this.paraApi.query.system.account(this.executor.address);
-        const nonce = nonceT.toBigInt();
-
         try {
-            let unsubClaimInit = await this.paraApi.tx.sudo.sudo(
+            let unsubInit = await this.paraApi.tx.sudo.sudo(
                 this.paraApi.tx.utility.batchAll([
                     this.paraApi.tx.crowdloanClaim.initialize(
-                        rootHash,
+                        tree.rootHash,
                         this.crwdloanCfg.claimPallet.locketAt,
                         this.crwdloanCfg.claimPallet.index,
                         this.crwdloanCfg.claimPallet.leaseStart,
@@ -414,10 +421,10 @@ export default class Crowdloan extends CliBaseCommand {
                         funding
                     )
                 ])
-            ).signAndSend(this.executor, {nonce: nonce}, (result) => {
+            ).signAndSend(this.executor, (result) => {
                 if (result.status.isFinalized) {
                     finalized = true;
-                    unsubClaimInit();
+                    unsubInit();
                 }
             });
         } catch (err) {
@@ -437,11 +444,158 @@ export default class Crowdloan extends CliBaseCommand {
     }
 
     private async runTest(tree: MerkleTree): Promise<void> {
-        // TODO:
-        this.logger.warn("Currently NO tests against pallets provided...");
+        // TODO: * false signature (signing something random or chaning a single hex value)
+        //       * false proof
+        //           * wrong amount
+        //           * wrong account
+        //       * false amount
+        //       * double claim
+        //       *
+        //
+
+        let claims = [];
+        // AccountRewardPallet: kAKdGAcqfxZ9mhcLgimCA4DU2T7fVXb7jNgJ1JFjXPQMi2Ckj
+        // Claim correctly first for all
+        for (const [id, [key, amount]] of this.syntheticAccounts)  {
+            const proof =  await Crowdloan.createProof(tree, id.toHex());
+
+            const signature = await Crowdloan.createSignature(key, id.toU8a());
+            const sigTSr25519 = this.paraApi.createType("Sr25519Signature", signature.signature);
+            const sigTMultiSig = this.paraApi.createType("MultiSignature", {sr25519: sigTSr25519});
+            // @ts-ignore
+            const proofT = this.paraApi.createType("Proof", {
+                leafHash: this.paraApi.createType("Hash",proof.leafHash),
+                sortedHashes: this.paraApi.createType("Vec<Hash>", proof.sortedHashes)
+            });
+            const amountT = this.paraApi.createType("Balance", amount);
+
+            /// REMOVE BELOW
+            /*
+            this.logger.warn("New Test contribution claim:")
+            this.logger.warn("Tree: \n" + JSONbig.stringify(tree, null, '\t'));
+            this.logger.warn("Proof: " + JSON.stringify(proof, null, '\t'));
+            this.logger.warn("sigTSr25519: " + sigTSr25519.toHex());
+            this.logger.warn("sigTMultiSig: " + sigTMultiSig.toHex());
+            this.logger.warn("amountT: " + amountT.toBigInt());
+            this.logger.warn("id: " + id.toHex());
+            */
+
+            try {
+                claims.push(
+                    this.paraApi.tx.crowdloanClaim.claimReward(
+                        id,
+                        id,
+                        sigTMultiSig,
+                        proofT,
+                        amountT
+                    )
+                );
+            } catch (err) {
+                this.logger.error(err);
+            }
+        }
+
+        const batch = 100;
+        let counter = 0;
+        for (const xt of claims) {
+            if(counter % batch === 0) {
+                await new Promise(resolve => setTimeout(resolve, 6000));
+            }
+
+            try {
+                await xt.send();
+            } catch (err) {
+                this.logger.error(err);
+            }
+
+            counter++;
+        }
+
+        // Error claims
     }
 
+    private static async createProof(tree: MerkleTree, id: string): Promise<Proof> {
+        let startIndex;
+        let contr =  tree.data.filter((val, idx) => {
+            if (val.account === id ) {
+                startIndex = idx;
+                return true;
+            }
 
+            return false;
+        })
+
+        if (startIndex === undefined || contr.length !== 1) {
+            return Promise.reject("Tree not generated correctly.");
+        }
+
+        let sortedHashes = [];
+        let currDepth = tree.tree.length - 1;
+        let index: number = startIndex;
+        while(currDepth >= 0) {
+            // Check if in this round we have the last element of this row and uneven row
+            if (index === tree.tree[currDepth].length - 1 && tree.tree[currDepth].length === 1) {
+                // If last and first element we must find the first uneven row below and take this one.
+                // Check first row below yourself for unevenness, and if so take the last element
+                let i = currDepth + 1;
+                let found = false;
+                while(i < tree.tree.length) {
+                    const lengthThisDepth = tree.tree[i].length;
+                    if(lengthThisDepth % 2 === 1) {
+                        sortedHashes.push(tree.tree[i][lengthThisDepth - 1])
+                        found = true;
+                        break
+                    }
+                    i++;
+                }
+                if (!found) {
+                    return Promise.reject("Algorithm for proof generation not working.");
+                }
+            } else if(index === tree.tree[currDepth].length - 1 && tree.tree[currDepth].length % 2 === 1 && tree.tree[currDepth].length !== 1) {
+                // Check first row above yourself for unevenness, and if so take the last element
+                let i = currDepth - 1;
+                let found = false;
+                while(i >= 0) {
+                    const lengthThisDepth = tree.tree[i].length;
+                    if(lengthThisDepth % 2 === 1) {
+                        sortedHashes.push(tree.tree[i][lengthThisDepth - 1])
+                        found = true;
+                        break
+                    }
+                    i--;
+                }
+                if (!found) {
+                    return Promise.reject("Algorithm for proof generation not working.");
+                }
+
+                index = tree.tree[i].length;
+                currDepth = i;
+            } else {
+                // If we are even then push the right element, else the left one
+                if (index % 2 === 0) {
+                    sortedHashes.push(tree.tree[currDepth][index + 1]);
+                } else {
+                    sortedHashes.push(tree.tree[currDepth][index - 1]);
+                }
+            }
+
+            index = (index - (index % 2)) / 2;
+            currDepth--;
+        }
+
+        return {
+            leafHash: tree.tree[tree.tree.length - 1][startIndex],
+            sortedHashes: sortedHashes
+        }
+    }
+
+    private static async createSignature(key: KeyringPair, msg: Uint8Array): Promise<Signature> {
+        return {
+            signer: key.address,
+            msg: msg,
+            signature: key.sign(msg)
+        }
+    }
 
     private async getContributions(network: string): Promise<Map<AccountId, Balance>> {
         if (network === 'Kusama') {
@@ -528,14 +682,14 @@ export default class Crowdloan extends CliBaseCommand {
         let counter = 0;
 
         while(contributions <= (BigInt(90) * maxContributions)/BigInt(100)) {
-            let amount = ((BigInt(Math.floor(Math.random()*10)) * maxContributions)/BigInt(10000));
+            let amount = ((BigInt(Math.floor(Math.random()*100)) * maxContributions)/BigInt(100_000));
 
             if(amount + contributions <= maxContributions) {
                 contributions += amount;
 
                 counter += 1;
                 let keypair = keyring.addFromUri(`TestAccount${counter}`);
-                let account =  this.paraApi.createType("AccountId", compactAddLength(keypair.addressRaw));
+                let account =  this.paraApi.createType("AccountId", keypair.addressRaw);
 
                 // Fill in storage which we will need to sign stuff later on
                 this.syntheticAccounts.set(account, [keypair, amount]);
@@ -558,7 +712,8 @@ export default class Crowdloan extends CliBaseCommand {
         let unsortedHashesAndData: Array<[string, Data]> = new Array();
 
         for (const [account, contribution] of contributions){
-            let data = account.toHex() + contribution.toHex().slice(2);
+            let data = Uint8Array.from(Array.from(account.toU8a()).concat(Array.from(contribution.toU8a())));
+
             unsortedHashesAndData.push([
                 blake2AsHex(data, 256),
                 {account: account.toHex(), contribution: contribution.toBigInt()}
@@ -597,7 +752,13 @@ export default class Crowdloan extends CliBaseCommand {
                     leftover = left;
                 } else {
                     let right = levelN[(i*2)+1];
-                    levelUp.push(blake2AsHex(left + right.slice(2), 256));
+                    let data = [left, right].sort((a, b) => {
+                        // Sort the hashes alphabetically
+                        return ('' + a).localeCompare(b);
+                    });
+                    let bytes = hexDecode(data[0].slice(2) + data[1].slice(2));
+
+                    levelUp.push(blake2AsHex(bytes, 256));
                 }
             }
 

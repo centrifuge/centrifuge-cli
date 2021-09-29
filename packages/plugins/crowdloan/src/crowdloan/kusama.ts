@@ -72,13 +72,16 @@ async function transformIntoRewardee(
 
     for (const [account, contributions] of contributors) {
         let first250Added = false;
+        let earlyBirdApplied = false;
+        let finalReward = BigInt(0);
+        let first250Bonus = BigInt(0);
 
         for (const contributor of contributions) {
             let contribution = contributor.contribution;
 
             if (codesToAccount.has(contributor.memo)) {
                 // Give the contributor the stuff he deserves
-                const plus = (contribution * config.referedPrct) / BigInt(100);
+                const plus = (contributor.contribution * config.referedPrct) / BigInt(100);
                 contribution += plus;
 
                 // Give the owner of the referral code the same amount
@@ -94,24 +97,29 @@ async function transformIntoRewardee(
             }
 
             if (contributor.whenContributed <= config.earlyBirdBlock) {
-                contribution += (contribution * config.earlyBirdPrct) / BigInt(100);
+                contribution += (contributor.contribution * config.earlyBirdPrct) / BigInt(100);
+                earlyBirdApplied = true;
             }
 
             // We only add this bonus once
             if (contributor.first250PrevCrowdloan !== BigInt(0) && !first250Added) {
-                contribution += (contributor.first250PrevCrowdloan * config.prevCrwdLoanPrct) / BigInt(100);
+                first250Bonus = (contributor.contribution * config.prevCrwdLoanPrct) / BigInt(100);
                 first250Added = true;
             }
 
-            let afterConversion = config.decimalDifference * contribution;
+             finalReward += config.decimalDifference * contribution;
+        }
 
-            if (rewardees.has(account)){
-                // @ts-ignore
-                let alreadyContribution: Balance = rewardees.get(account);
-                rewardees.set(account, api.createType("Balance", alreadyContribution.toBigInt() + afterConversion));
-            } else {
-                rewardees.set(account, api.createType("Balance", afterConversion));
-            }
+        if (finalReward && !earlyBirdApplied) {
+            finalReward += first250Bonus;
+        }
+
+        if (rewardees.has(account)){
+            // @ts-ignore
+            let alreadyContribution: Balance = rewardees.get(account);
+            rewardees.set(account, api.createType("Balance", alreadyContribution.toBigInt() + finalReward));
+        } else {
+            rewardees.set(account, api.createType("Balance", finalReward));
         }
     }
 
