@@ -182,7 +182,7 @@ export default class Crowdloan extends CliBaseCommand {
                     throw new Error("Exec has " + execBalance.free.toHuman() + ". This is an insufficient balance. Needs " + additional.toHuman() + " more.")
                 }
 
-                //await this.initializePallets(tree, funding.toBigInt());
+                await this.initializePallets(tree, funding.toBigInt());
 
                 if(flags.test && flags.simulate) {
                     await this.runTest(tree);
@@ -411,7 +411,7 @@ export default class Crowdloan extends CliBaseCommand {
                         this.crwdloanCfg.claimPallet.leasePeriod
                     ),
                     this.paraApi.tx.crowdloanReward.initialize(
-                        this.crwdloanCfg.rewardPallet.directPayoutRatio,
+                        this.crwdloanCfg.rewardPallet.directPayoutRatio * BigInt(10_000_000),
                         this.crwdloanCfg.rewardPallet.vestingPeriod,
                         this.crwdloanCfg.rewardPallet.vestingStart,
                     ),
@@ -534,42 +534,59 @@ export default class Crowdloan extends CliBaseCommand {
         let index: number = startIndex;
         while(currDepth >= 0) {
             // Check if in this round we have the last element of this row and uneven row
-            if (index === tree.tree[currDepth].length - 1 && tree.tree[currDepth].length === 1) {
-                // If last and first element we must find the first uneven row below and take this one.
-                // Check first row below yourself for unevenness, and if so take the last element
-                let i = currDepth + 1;
-                let found = false;
-                while(i < tree.tree.length) {
-                    const lengthThisDepth = tree.tree[i].length;
-                    if(lengthThisDepth % 2 === 1) {
-                        sortedHashes.push(tree.tree[i][lengthThisDepth - 1])
-                        found = true;
-                        break
+            if (index === tree.tree[currDepth].length - 1 && tree.tree[currDepth].length % 2 === 1 ){
+                // Count the number of uneven rows above your row and then decide to go up- or downwards
+                let numUnevenRows = 0;
+                // If we are not in the last row, do the count. If we are, then there are zero uneven rows above us and
+                // we need to go downwards anyways.
+                if (currDepth !== 0) {
+                    for (let i = currDepth - 1; i >= 0; i--) {
+                        if (tree.tree[i].length % 2 === 1) {
+                            numUnevenRows++
+                        }
                     }
-                    i++;
-                }
-                if (!found) {
-                    return Promise.reject("Algorithm for proof generation not working.");
-                }
-            } else if(index === tree.tree[currDepth].length - 1 && tree.tree[currDepth].length % 2 === 1 && tree.tree[currDepth].length !== 1) {
-                // Check first row above yourself for unevenness, and if so take the last element
-                let i = currDepth - 1;
-                let found = false;
-                while(i >= 0) {
-                    const lengthThisDepth = tree.tree[i].length;
-                    if(lengthThisDepth % 2 === 1) {
-                        sortedHashes.push(tree.tree[i][lengthThisDepth - 1])
-                        found = true;
-                        break
-                    }
-                    i--;
-                }
-                if (!found) {
-                    return Promise.reject("Algorithm for proof generation not working.");
                 }
 
-                index = tree.tree[i].length;
-                currDepth = i;
+                let down = (numUnevenRows % 2) === 0;
+
+                // Ensure we are not in the base row of the tree.
+                if (down) {
+                    // If last and first element we must find the first uneven row below and take this one.
+                    // Check first row below yourself for unevenness, and if so take the last element
+                    let i = currDepth + 1;
+                    let found = false;
+                    while(i < tree.tree.length) {
+                        const lengthThisDepth = tree.tree[i].length;
+                        if(lengthThisDepth % 2 === 1) {
+                            sortedHashes.push(tree.tree[i][lengthThisDepth - 1])
+                            found = true;
+                            break
+                        }
+                        i++;
+                    }
+                    if (!found) {
+                        return Promise.reject("Algorithm for proof generation not working.");
+                    }
+                } else {
+                    // Check first row above yourself for unevenness, and if so take the last element
+                    let i = currDepth - 1;
+                    let found = false;
+                    while (i >= 0) {
+                        const lengthThisDepth = tree.tree[i].length;
+                        if (lengthThisDepth % 2 === 1) {
+                            sortedHashes.push(tree.tree[i][lengthThisDepth - 1])
+                            found = true;
+                            break
+                        }
+                        i--;
+                    }
+                    if (!found) {
+                        return Promise.reject("Algorithm for proof generation not working.");
+                    }
+
+                    index = tree.tree[i].length;
+                    currDepth = i;
+                }
             } else {
                 // If we are even then push the right element, else the left one
                 if (index % 2 === 0) {
