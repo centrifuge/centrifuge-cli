@@ -1,7 +1,7 @@
 import {Command, flags} from '@oclif/command'
 import {IConfig} from "@oclif/config";
 import {ApiPromise, WsProvider, Keyring} from "@polkadot/api";
-import {AccountId, Balance, EventRecord, Hash} from "@polkadot/types/interfaces";
+import {AccountId, Balance, EventRecord, Extrinsic, Hash} from "@polkadot/types/interfaces";
 import {KeyringPair} from "@polkadot/keyring/types";
 import {GenericExtrinsic, Json} from "@polkadot/types";
 import {compactAddLength} from "@polkadot/util";
@@ -28,6 +28,7 @@ import {
     Signature
 } from "../crowdloan/interfaces";
 import {RegistryTypes} from "@polkadot/types/types";
+import {SubmittableExtrinsic} from "@polkadot/api/types";
 
 
 export default class Crowdloan extends CliBaseCommand {
@@ -83,10 +84,9 @@ export default class Crowdloan extends CliBaseCommand {
             description: 'If present, the cli will generate a JSON file containing the generated merkle tree. The argument is the path were tree is stored.',
             default: './packages/cli/outputs'
         }),
-        // TODO: Implement this feature
         'run-from-tree': flags.string({
             description: 'Allows to initialize the pallets with a tree previsouly created with this script',
-            exclusive: ['simulate, dry-run, tree-output']
+            exclusive: ['simulate']
         }),
         'simulate':  flags.boolean({
             description: 'if present, the data from the contributions will be simulated and not fetched from a relay chain',
@@ -444,41 +444,154 @@ export default class Crowdloan extends CliBaseCommand {
     }
 
     private async runTest(tree: MerkleTree): Promise<void> {
-        // TODO: * false signature (signing something random or chaning a single hex value)
-        //       * false proof
-        //           * wrong amount
-        //           * wrong account
-        //       * false amount
-        //       * double claim
-        //       *
-        //
-
-        let claims = [];
-        // AccountRewardPallet: kAKdGAcqfxZ9mhcLgimCA4DU2T7fVXb7jNgJ1JFjXPQMi2Ckj
-        // Claim correctly first for all
+        // Prepare Error Claims
+        let errorClaims: Array<[any, number]> = [];
         for (const [id, [key, amount]] of this.syntheticAccounts)  {
             const proof =  await Crowdloan.createProof(tree, id.toHex());
+
+            // Get a random number between 1 and 100
+            let rnd = Math.floor(Math.random()*100);
+
+            let signature;
+            let relayChainAccount;
+            let proofT;
+            let amountT;
+            let errorSignal;
+
+            if (0 <= rnd && rnd < 20) {
+                // Normal double claim
+                signature = await Crowdloan.createSignature(key, id.toU8a());
+                // @ts-ignore
+                proofT = this.paraApi.createType("Proof", {
+                    leafHash: this.paraApi.createType("Hash",proof.leafHash),
+                    sortedHashes: this.paraApi.createType("Vec<Hash>", proof.sortedHashes)
+                });
+                amountT = this.paraApi.createType("Balance", amount);
+                relayChainAccount = id;
+
+                errorSignal = 1;
+            } else if (20 <= rnd && rnd < 40) {
+                // Wrong signature
+                signature = await Crowdloan.createSignature(key, Uint8Array.from([0,0,0,0,0,0,0]));
+                // @ts-ignore
+                proofT = this.paraApi.createType("Proof", {
+                    leafHash: this.paraApi.createType("Hash",proof.leafHash),
+                    sortedHashes: this.paraApi.createType("Vec<Hash>", proof.sortedHashes)
+                });
+                amountT = this.paraApi.createType("Balance", amount);
+                relayChainAccount = id;
+
+                errorSignal = 2;
+            } else if (40 <= rnd && rnd < 60) {
+                // Wrong amount
+                signature = await Crowdloan.createSignature(key, id.toU8a());
+                // @ts-ignore
+                proofT = this.paraApi.createType("Proof", {
+                    leafHash: this.paraApi.createType("Hash",proof.leafHash),
+                    sortedHashes: this.paraApi.createType("Vec<Hash>", proof.sortedHashes)
+                });
+                amountT = this.paraApi.createType("Balance", amount + BigInt(rnd));
+                relayChainAccount = id;
+
+                errorSignal = 3;
+            } else if (60 <= rnd && rnd < 80) {
+                // Wrong proof
+                signature = await Crowdloan.createSignature(key, id.toU8a());
+                let wrongHashes = proof.sortedHashes;
+                wrongHashes[0] = "0xbbbbbbbbbbbbbrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr";
+                // @ts-ignore
+                proofT = this.paraApi.createType("Proof", {
+                    leafHash: this.paraApi.createType("Hash",proof.leafHash),
+                    sortedHashes: this.paraApi.createType("Vec<Hash>", wrongHashes)
+                });
+                amountT = this.paraApi.createType("Balance", amount + BigInt(rnd));
+                relayChainAccount = id;
+
+                errorSignal = 3;
+            } else if (80 <= rnd && rnd < 100) {
+                // Wrong account
+                signature = await Crowdloan.createSignature(key, id.toU8a());
+                // @ts-ignore
+                proofT = this.paraApi.createType("Proof", {
+                    leafHash: this.paraApi.createType("Hash",proof.leafHash),
+                    sortedHashes: this.paraApi.createType("Vec<Hash>", proof.sortedHashes)
+                });
+                amountT = this.paraApi.createType("Balance", amount);
+                relayChainAccount = this.paraApi.createType("AccountId", [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,]);
+
+                errorSignal = 2;
+            } else {
+                return Promise.reject("Unrechable code. Qed.");
+            }
+
+            // @ts-ignore
+            const sigTSr25519 = this.paraApi.createType("Sr25519Signature", signature.signature);
+            const sigTMultiSig = this.paraApi.createType("MultiSignature", {sr25519: sigTSr25519});
+
+
+            try {
+                errorClaims.push(
+                    [
+                        this.paraApi.tx.crowdloanClaim.claimReward(
+                            relayChainAccount,
+                            id,
+                            sigTMultiSig,
+                            proofT,
+                            amountT
+                        ),
+                        errorSignal
+                    ]
+                );
+            } catch (err) {
+                this.logger.error(err);
+            }
+        }
+
+        const batchError = 100;
+        let counterError = 0;
+        for (const [xt, signal] of errorClaims) {
+            if(counterError % batchError === 0) {
+                await new Promise(resolve => setTimeout(resolve, 6000));
+            }
+
+            // Send all claims that are not double claim
+            if (signal !== 1) {
+                try {
+                    await xt.send();
+                } catch (err) {
+                    // @ts-ignore1010:
+                    const numAsString = err.message.replace("1010: Invalid Transaction: Custom error: ", "").trim();
+                    try {
+                        const errorNum = parseInt(numAsString);
+                        if(errorNum !== signal) {
+                            this.logger.error("Error signal was not expected. Wanted: " + signal+ ", got: " + errorNum);
+                        } else {
+                            this.logger.error("Failed correclty with signal " + signal);
+                        }
+                    } catch (err) {
+                        this.logger.error("Could not retrieve error signal. Got: \n" + err);
+                    }
+                }
+            }
+
+            counterError++;
+        }
+
+        let claims = [];
+        // Claim correctly first for all
+        for (const [id, [key, amount]] of this.syntheticAccounts) {
+            const proof = await Crowdloan.createProof(tree, id.toHex());
 
             const signature = await Crowdloan.createSignature(key, id.toU8a());
             const sigTSr25519 = this.paraApi.createType("Sr25519Signature", signature.signature);
             const sigTMultiSig = this.paraApi.createType("MultiSignature", {sr25519: sigTSr25519});
             // @ts-ignore
             const proofT = this.paraApi.createType("Proof", {
-                leafHash: this.paraApi.createType("Hash",proof.leafHash),
+                leafHash: this.paraApi.createType("Hash", proof.leafHash),
                 sortedHashes: this.paraApi.createType("Vec<Hash>", proof.sortedHashes)
             });
             const amountT = this.paraApi.createType("Balance", amount);
 
-            /// REMOVE BELOW
-            /*
-            this.logger.warn("New Test contribution claim:")
-            this.logger.warn("Tree: \n" + JSONbig.stringify(tree, null, '\t'));
-            this.logger.warn("Proof: " + JSON.stringify(proof, null, '\t'));
-            this.logger.warn("sigTSr25519: " + sigTSr25519.toHex());
-            this.logger.warn("sigTMultiSig: " + sigTMultiSig.toHex());
-            this.logger.warn("amountT: " + amountT.toBigInt());
-            this.logger.warn("id: " + id.toHex());
-            */
 
             try {
                 claims.push(
@@ -511,7 +624,35 @@ export default class Crowdloan extends CliBaseCommand {
             counter++;
         }
 
-        // Error claims
+        const batchDoubleClaim = 100;
+        let counterDoubleClaim = 0;
+        for (const [xt, signal] of errorClaims) {
+            if(counterDoubleClaim % batchDoubleClaim === 0) {
+                await new Promise(resolve => setTimeout(resolve, 6000));
+            }
+
+            // Send all claims that are double claim
+            if (signal === 1) {
+                try {
+                    await xt.send();
+                } catch (err) {
+                    // @ts-ignore
+                    const numAsString = err.message.replace("1010: Invalid Transaction: Custom error: ", "").trim();
+                    try {
+                        const errorNum = parseInt(numAsString);
+                        if(errorNum !== signal) {
+                            this.logger.error("Error signal was not expected. Wanted: " + signal+ ", got: " + errorNum);
+                        } else {
+                            this.logger.error("Failed correclty with signal " + signal);
+                        }
+                    } catch (err) {
+                        this.logger.error("Could not retrieve error signal. Got: \n" + err);
+                    }
+                }
+            }
+
+            counterDoubleClaim++;
+        }
     }
 
     private static async createProof(tree: MerkleTree, id: string): Promise<Proof> {

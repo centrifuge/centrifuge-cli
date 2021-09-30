@@ -30,7 +30,7 @@ async function fetchFromWebService(api: ApiPromise): Promise<Map<AccountId, Arra
     let contributions: Map<AccountId, Array<Contributor>> = new Map();
 
     try {
-      let response = await axios.get('http://localhost:6464/contributions');
+      let response = await axios.get('https://crowdloan-ws.centrifuge.io/contributors');
 
       if (response !== undefined && response.status === 200 ) {
           for (const noType of response.data) {
