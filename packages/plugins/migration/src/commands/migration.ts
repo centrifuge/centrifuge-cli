@@ -75,7 +75,7 @@ export default class Migration extends CliBaseCommand {
     };
 
     constructor(argv: string[], config: IConfig) {
-        super("Crowdloan", argv, config);
+        super("Migration", argv, config);
     }
 
     async run() {
