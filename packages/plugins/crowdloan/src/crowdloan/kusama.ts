@@ -3,6 +3,7 @@ import {CrowdloanSpec, KusamaTransformConfig, TransformConfig} from "./interface
 import {AccountId, Balance} from "@polkadot/types/interfaces";
 import * as Crowdloan from "../commands/crowdloan";
 import {Logger as TsLogger} from 'tslog';
+import {BIT_SIGNED} from "@polkadot/types/extrinsic/constants";
 
 const axios = require('axios').default;
 
@@ -30,27 +31,33 @@ async function fetchFromWebService(api: ApiPromise): Promise<Map<AccountId, Arra
     let contributions: Map<AccountId, Array<Contributor>> = new Map();
 
     try {
-      let response = await axios.get('https://crowdloan-ws.centrifuge.io/contributors');
+      let response = await axios.get('https://crowdloan-ws.centrifuge.io/contributions');
 
+      let overall = BigInt(0);
+      // TODO: Not WORKING. THis for some reason does not catch that there are some of the same
       if (response !== undefined && response.status === 200 ) {
           for (const noType of response.data) {
-              let account = noType.account;
+              let account = api.createType("AccountId", noType.account);
               const contributor: Contributor = {
                   account: noType.account,
                   contribution: BigInt(noType.contribution),
                   whenContributed: BigInt(noType.blockNumber),
                   memo: noType.referralCode,
-                  first250PrevCrowdloan: BigInt(noType.amountFirst250PrevCrwdloan),
+                  first250PrevCrowdloan: JSON.parse(noType.isFirst250PrevCrwdloan),
                   extrinsic: {
                       block: BigInt(noType.extrinsic.blockNumber),
                       index: Number(noType.extrinsic.index)
                   }
               };
 
+              overall += BigInt(noType.contribution);
+
+              // TODO: Change this one here to if and change account id to string!!
               contributions.has(account)
                   ? contributions.get(account)?.push(contributor)
                   : contributions.set(account, Array.from([contributor]));
           }
+
       } else {
           return Promise.reject("Failure fetching data from webservice. Response " + JSON.stringify(response, null, '\t'));
       }
@@ -70,6 +77,10 @@ async function transformIntoRewardee(
 ): Promise<Map<AccountId, Balance>> {
     let rewardees: Map<AccountId, Balance> = new Map();
 
+    // TODO REMOVE
+    let overall = BigInt(0);
+
+
     for (const [account, contributions] of contributors) {
         let first250Added = false;
         let earlyBirdApplied = false;
@@ -78,6 +89,8 @@ async function transformIntoRewardee(
 
         for (const contributor of contributions) {
             let contribution = contributor.contribution;
+
+            overall += contribution;
 
             if (codesToAccount.has(contributor.memo)) {
                 // Give the contributor the stuff he deserves
@@ -102,7 +115,7 @@ async function transformIntoRewardee(
             }
 
             // We only add this bonus once
-            if (contributor.first250PrevCrowdloan !== BigInt(0) && !first250Added) {
+            if (contributor.first250PrevCrowdloan && !first250Added) {
                 first250Bonus = (contributor.contribution * config.prevCrwdLoanPrct) / BigInt(100);
                 first250Added = true;
             }
@@ -110,7 +123,7 @@ async function transformIntoRewardee(
              finalReward += config.decimalDifference * contribution;
         }
 
-        if (finalReward && !earlyBirdApplied) {
+        if (first250Added && !earlyBirdApplied) {
             finalReward += first250Bonus;
         }
 
@@ -123,6 +136,8 @@ async function transformIntoRewardee(
         }
     }
 
+    // TODO: REMOVE
+    console.log("!!!! OVERALL: " + api.createType("Balance", overall).toHuman());
     return rewardees;
 }
 
@@ -131,7 +146,7 @@ interface Contributor {
     contribution: bigint,
     memo: string,
     whenContributed: bigint,
-    first250PrevCrowdloan: bigint,
+    first250PrevCrowdloan: boolean,
     extrinsic: {
         block: bigint,
         index: number,
