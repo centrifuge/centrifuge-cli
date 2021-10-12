@@ -277,7 +277,7 @@ export default class Migration extends CliBaseCommand {
         }
 
         try {
-            fs.writeFileSync( "./outputs/MIGRATION-stats-" + Date.now() + ".json", JSONbig.stringify(stats));
+            fs.writeFileSync( "./packages/cli/outputs/MIGRATION-stats-" + Date.now() + ".json", JSONbig.stringify(stats));
         } catch (err) {
             this.logger.debug("Summary of migration: \n   "  + JSONbig.stringify(stats));
         }
