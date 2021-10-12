@@ -88,7 +88,7 @@ export default class Migration extends CliBaseCommand {
             // Parse Credentials
             await this.parseCredentials(flags.creds);
 
-            this.logger.debug("Connecting to source network: ", args["source-network"])
+            this.logger.info("Connecting to source network: ", args["source-network"])
             const wsProviderFrom = new WsProvider(args["source-network"]);
             this.fromApi = await ApiPromise.create({
                 provider: wsProviderFrom,
@@ -99,7 +99,7 @@ export default class Migration extends CliBaseCommand {
                 }
             });
 
-            this.logger.debug("Connecting to destination network: ", args["destination-network"])
+            this.logger.info("Connecting to destination network: ", args["destination-network"])
             const wsProviderTo = new WsProvider(args["destination-network"]);
             this.toApi = await ApiPromise.create({
                 provider: wsProviderTo,
@@ -113,13 +113,13 @@ export default class Migration extends CliBaseCommand {
 
             // Get latest block from standalone chain
             const startFrom = (await this.fromApi.rpc.chain.getHeader()).hash
-            this.logger.debug("Starting migration from relayChain block with hash " + startFrom);
+            this.logger.info("Starting migration from relayChain block with hash " + startFrom);
             let atFrom = startFrom;
 
             if (flags["from-block"] != '-1') {
                 atFrom = await this.fromApi.rpc.chain.getBlockHash(flags["from-block"]);
                 // Check if this really results in a block. This can fail. Hence, we will fail here
-                this.logger.debug("Fetching storage from relayChain block with hash " + atFrom);
+                this.logger.info("Fetching storage from relayChain block with hash " + atFrom);
                 try {
                     await this.fromApi.rpc.chain.getBlock(atFrom);
                 } catch (err) {
@@ -129,7 +129,7 @@ export default class Migration extends CliBaseCommand {
             }
 
             const atTo = (await this.toApi.rpc.chain.getHeader()).hash;
-            this.logger.debug("Starting migration from parachain block with hash "  + atTo);
+            this.logger.info("Starting migration from parachain block with hash "  + atTo);
             let endTo: Hash; // This will be used later for the stats
             const storageToFetch = await this.createStorageElements();
 
@@ -184,7 +184,7 @@ export default class Migration extends CliBaseCommand {
                     }
 
                     endTo = (await this.toApi.rpc.chain.getHeader()).hash;
-                    this.logger.debug("Ending migration on parachain block with hash " + endTo);
+                    this.logger.info("Ending migration on parachain block with hash " + endTo);
                     await this.createSummary(startFrom, atFrom, atTo, endTo, sequence);
                 }
             }
@@ -220,7 +220,6 @@ export default class Migration extends CliBaseCommand {
                     await this.toApi.rpc.chain.getBlock(endToHash);
                 }
 
-                const newAtTo = (await this.toApi.rpc.chain.getHeader()).hash;
                 // Verify
                 const inconsistentStorage: Array<[StorageKey, number[] | Uint8Array]>
                     = await verifyMigration(this.toApi, this.fromApi, storageToFetch, atToHash, endToHash, startFromHash, atFromHash);
@@ -277,17 +276,37 @@ export default class Migration extends CliBaseCommand {
         }
 
         try {
-            fs.writeFileSync( "./outputs/MIGRATION-stats-" + Date.now() + ".json", JSONbig.stringify(stats));
-        } catch (err) {
             this.logger.debug("Summary of migration: \n   "  + JSONbig.stringify(stats));
+            this.writeFile( JSONbig.stringify(stats), "Migration-Stats-" + Date.now() + ".json", "Summaries");
+        } catch (err) {
+            this.logger.info("Summary of migration: \n   "  + JSONbig.stringify(stats));
         }
     }
 
     async parseSummary(filePath: string): Promise<MigrationStats> {
         try {
             let file = fs.readFileSync(filePath);
-             const stats: MigrationStats = JSONbig.parse(file.toString());
-            // TODO: Check if config is correct here
+            const stats: MigrationStats = JSONbig.parse(file.toString());
+
+             if (stats.toEndAt === undefined) {
+                 return Promise.reject("Missing 'toEndAt' in MigrationStats")
+
+             }
+            if (stats.fromFetchedAt === undefined) {
+                return Promise.reject("Missing 'fromFetchedAt' in MigrationStats")
+
+            }
+            if (stats.fromStartedAt === undefined) {
+                return Promise.reject("Missing 'fromStartedAt' in MigrationStats")
+
+            }
+            if (stats.toStartedAt === undefined) {
+                return Promise.reject("Missing 'toStartedAt' in MigrationStats")
+
+            }
+            if (stats.modules === undefined) {
+                return Promise.reject("Missing 'modules' in MigrationStats")
+            }
 
             return stats;
         } catch (err) {
@@ -296,7 +315,7 @@ export default class Migration extends CliBaseCommand {
     }
 
     async checkAvailability(elements: Array<StorageElement>): Promise<Array<StorageElement>> {
-        // TODO: Check if migration is possible with elements. We currently simply return here
+        // TODO: Check if migration is possible with elements. In our case it is...
         return elements;
     }
 
@@ -331,7 +350,6 @@ export default class Migration extends CliBaseCommand {
         try {
             let file = fs.readFileSync(filePath);
             this.migrationConfig = JSONbig.parse(file.toString());
-            // TODO: Check if config is correct here
         } catch (err) {
             return Promise.reject(err);
         }
