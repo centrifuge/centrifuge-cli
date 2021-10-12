@@ -3,11 +3,15 @@
     "compilerOptions": {
         "composite": true,
         "rootDir": "./src",
-        "outDir": "./dist"
+        "outDir": "./dist",
+        "sourceMap": true,
     },
     "references": [
         {
             "path": "../../libs/core"
+        },
+        {
+            "path": "../../libs/dispatcher"
         }
     ],
     "include": [
