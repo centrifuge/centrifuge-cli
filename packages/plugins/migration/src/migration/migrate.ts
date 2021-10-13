@@ -426,7 +426,10 @@ async function prepareProxyProxies(
     let packetOfProxies: Array<[AccountId, Balance,  Uint8Array]> = new Array();
 
     // @ts-ignore
-    const maxProxies = toApi.consts.migration.migrationMaxProxies.toNumber();
+    const maxProxiesOnChain = toApi.consts.migration.migrationMaxProxies.toNumber();
+
+    // For safety reasons we reduce 1/3 of the max amount here
+    const maxProxies = Math.round(maxProxiesOnChain - ((1/3) * maxProxiesOnChain));
 
     let counter = 0;
     for (const item of values) {
@@ -471,7 +474,10 @@ async function prepareSystemAccount(
     let packetOfAccounts: Array<[ Uint8Array,  Uint8Array]> = new Array();
 
     // @ts-ignore
-    const maxAccounts = toApi.consts.migration.migrationMaxAccounts.toNumber();
+    const maxAccountsOnChain = toApi.consts.migration.migrationMaxAccounts.toNumber();
+
+    // For safety reasons we reduce 1/3 of the max amount here
+    const maxAccounts = Math.round(maxAccountsOnChain - ((1/3) * maxAccountsOnChain));
 
     let counter = 0;
     for (const item of values) {
@@ -569,9 +575,12 @@ async function prepareVestingVestingInfo(
     let packetOfVestings: Array<[AccountId, VestingInfo]> = new Array();
 
     // @ts-ignore
-    const maxVestings = toApi.consts.migration.migrationMaxVestings.toNumber();
-    let counter = 0;
+    const maxVestingsOnChain = toApi.consts.migration.migrationMaxVestings.toNumber();
 
+    // For safety reasons we reduce 1/3 of the max amount here
+    const maxVestings = Math.round(maxVestingsOnChain - ((1/3) * maxVestingsOnChain));
+
+    let counter = 0;
     for (const item of values) {
         counter += 1;
         if (item instanceof StorageMapValue) {

@@ -113,13 +113,13 @@ export default class Migration extends CliBaseCommand {
 
             // Get latest block from standalone chain
             const startFrom = (await this.fromApi.rpc.chain.getHeader()).hash
-            this.logger.info("Starting migration from relayChain block with hash " + startFrom);
+            this.logger.info("Starting migration from stand-alone chain block with hash " + startFrom);
             let atFrom = startFrom;
 
             if (flags["from-block"] != '-1') {
                 atFrom = await this.fromApi.rpc.chain.getBlockHash(flags["from-block"]);
                 // Check if this really results in a block. This can fail. Hence, we will fail here
-                this.logger.info("Fetching storage from relayChain block with hash " + atFrom);
+                this.logger.info("Fetching storage from stand-alone chain block with hash " + atFrom);
                 try {
                     await this.fromApi.rpc.chain.getBlock(atFrom);
                 } catch (err) {
@@ -244,13 +244,14 @@ export default class Migration extends CliBaseCommand {
             this.fromApi.disconnect();
             this.toApi.disconnect()
         } catch (err) {
+            this.logger.error(err);
+
             try {
                 this.fromApi.disconnect();
                 this.toApi.disconnect()
             } catch(err) {
                 this.exit(2);
             }
-            this.logger.error(err);
             this.exit(2);
         }
 
