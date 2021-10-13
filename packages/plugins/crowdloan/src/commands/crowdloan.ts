@@ -80,9 +80,9 @@ export default class Crowdloan extends CliBaseCommand {
             description: 'If present, the cli will generate the tree and spill out the amount of funding needed for the exec.',
             default: false,
         }),
-        'tree-output': flags.string({
-            description: 'If present, the cli will generate a JSON file containing the generated merkle tree. The argument is the path were tree is stored.',
-            default: './packages/cli/outputs'
+        'tree-output': flags.boolean({
+            description: 'If present, the cli will output the generated merkle tree to logs.',
+            default: false,
         }),
         'run-from-tree': flags.string({
             description: 'Allows to initialize the pallets with a tree previsouly created with this script',
@@ -130,7 +130,6 @@ export default class Crowdloan extends CliBaseCommand {
                     : await this.getContributions(flags.relay);
 
                 if (flags.simulate) {
-                    let file = './packages/cli/outputs/CROWDLOAN-syntheticContributors-' + Date.now() + '.json'
                     let asArray = new Array();
                     this.syntheticAccounts.forEach(([keyPair, amount], id) => asArray.push({
                         account: id.toHex(),
@@ -138,17 +137,12 @@ export default class Crowdloan extends CliBaseCommand {
                         contribution: amount
                     }));
 
-                    if (fs.existsSync('./packages/cli/outputs')) {
-                        fs.writeFile(file, JSONbig.stringify(asArray, null, '\t'), err => {
-                            if (err) {
-                                this.logger.error("Error writing synthetic contributors to file. \n" + err)
-                                this.logger.debug("Synthetic Contributors: \n" + JSONbig.stringify(asArray, null, '\t'));
-                            }
-                        });
-
-                    } else {
-                        this.logger.warn("Folder '" + process.cwd() + "/outputs' does not exist. Could not store Merkle-tree.")
-                        this.logger.debug("Synthetic Contributors: \n" + JSONbig.stringify(asArray, null, '\t'));
+                    let fileName = 'syntheticContributors-' + Date.now() + '.json';
+                    try {
+                        this.writeFile(JSONbig.stringify(asArray, null, '\t'), fileName, 'SyntheticContributors');
+                    } catch (err) {
+                        this.logger.warn("Error writing file. " + err);
+                        this.logger.debug("Synthetic contributors: \n" +JSONbig.stringify(asArray, null, '\t'));
                     }
                 }
             }
@@ -158,18 +152,17 @@ export default class Crowdloan extends CliBaseCommand {
                 ? await Crowdloan.generateMerkleTree(contributions)
                 : await Crowdloan.parseMerkleTree(flags['run-from-tree'])
 
-            if(flags["tree-output"] !== undefined) {
-                if(fs.existsSync(flags["tree-output"])) {
-                    fs.writeFile(flags["tree-output"] + "/CROWDLOAN-merkleTree-" + Date.now() + ".json", JSONbig.stringify(tree, null, '\t'), err => {
-                        if(err) {
-                            this.logger.error("Error writing Merkle-tree to file. \n" + err);
-                            this.logger.debug("Merkle Tree: \n" + JSONbig.stringify(tree, null, '\t'));
-                        }
-                    });
-                } else {
-                    this.logger.warn("Folder " + flags["tree-output"] + " does not exist. Could not store Merkle-tree.")
-                    this.logger.debug("Merkle Tree: \n" + JSONbig.stringify(tree, null, '\t'));
-                }
+            // Storing tree always
+            try {
+                const fileName = 'MerkleTree-' + Date.now() + '.json';
+                this.writeFile(JSONbig.stringify(tree, null, '\t'), fileName, 'MerkleTrees');
+            } catch (err) {
+                this.logger.warn("Error writing file. " + err);
+                this.logger.debug("Merkle tree: \n" +JSONbig.stringify(tree, null, '\t'));
+            }
+
+            if(flags["tree-output"]) {
+                this.logger.info("Merkle tree: \n" +JSONbig.stringify(tree, null, '\t'));
             }
 
             const funding: Balance = await this.calculateFunding(tree);
