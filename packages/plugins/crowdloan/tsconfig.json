@@ -13,9 +13,6 @@
         {
             "path": "../../libs/util"
         },
-        {
-            "path": "../../libs/sp-state-fetch",
-        },
     ],
     "include": [
         "src/**/*"

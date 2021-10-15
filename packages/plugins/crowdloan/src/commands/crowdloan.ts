@@ -3,8 +3,6 @@ import {IConfig} from "@oclif/config";
 import {ApiPromise, WsProvider, Keyring} from "@polkadot/api";
 import {AccountId, Balance, EventRecord, Extrinsic, Hash} from "@polkadot/types/interfaces";
 import {KeyringPair} from "@polkadot/keyring/types";
-import {GenericExtrinsic, Json} from "@polkadot/types";
-import {compactAddLength} from "@polkadot/util";
 import { blake2AsHex } from "@polkadot/util-crypto";
 import {DownloadResponse, Storage} from "@google-cloud/storage";
 import * as fs from "fs";
@@ -14,7 +12,6 @@ import {getContributions as getContributionsPolkadot} from "../crowdloan/polkado
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
-import {fetchChildState, createDefaultChildStorageKey, Hasher} from "@centrifuge-cli/sp-state-fetch";
 import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray, hexDecode, LeU64Bytes} from "@centrifuge-cli/util"
 import {CliBaseCommand} from "@centrifuge-cli/core";
 
@@ -65,8 +62,7 @@ export default class Crowdloan extends CliBaseCommand {
         'para': flags.string({
             char: 'p',
             description: 'the networks ws-endpoint of the para chain',
-            // TODO: remove and add required after testing
-            default: 'ws://localhost:9946'
+            required: true,
         }),
         'config': flags.string({
             description: 'Path to a JSON-file that specifies the config for the crowdloan-modules and crowdloan data from relay-chain',
@@ -767,14 +763,13 @@ export default class Crowdloan extends CliBaseCommand {
                 this.logger.getChildLogger({name: "Crowdloan - Kusama"})
             );
         } else if (network === 'Polkadot') {
-            // TODO: Not yet implenented
-            // return getContributionsPolkadot();
-            return Promise.reject('Polkadot not yet implemented. Aborting!');
+            return getContributionsPolkadot();
         } else {
             return Promise.reject(`Unknown network ${network}. Aborting!`);
         }
     }
 
+    // TODO: create a function that allows to take credentials of some form and then call the database accordingly
     private async fetchCodesFromCloud(api: ApiPromise, projectId: string, bucket: string): Promise<Map<string, AccountId>> {
         // check 1Password entry for "Altair Referral Code Bucket Credentials"
         const GOOGLE_CLOUD_PRIVATE_KEY = this.gcloudPrivateKey;

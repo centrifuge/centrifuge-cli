@@ -24,10 +24,9 @@
   "dependencies": {
     "@oclif/command": "^1.8.0",
     "@polkadot/api": "^4.16.2",
-    "@polkadot/types": "^4.16.2",
+
     "@centrifuge-cli/core": "0.1.0",
     "@centrifuge-cli/util": "0.1.0",
-    "@centrifuge-cli/sp-state-fetch": "0.1.0",
     "@google-cloud/storage": "^5.14.1",
     "json-bigint": "^1.0.0",
     "axios": "^0.21.4"

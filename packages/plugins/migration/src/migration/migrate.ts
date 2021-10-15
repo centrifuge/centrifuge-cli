@@ -203,9 +203,11 @@ async function verifyProxyProxies(
 
                     // @ts-ignore
                     for (const newDelegate of newProxyInfo[0]) {
+                        // @ts-ignore
                         let newAccount = newDelegate["delegate"].toHex();
                         let newProxyType = newApi.createType("ProxyType", oldDelegate[1]);
                         if (oldAccount === newAccount &&
+                            // @ts-ignore
                             newDelegate['proxyType'].toHex() === newProxyType.toHex())
                         {
                             found = true;
@@ -221,6 +223,7 @@ async function verifyProxyProxies(
                 let msg = "";
                 // @ts-ignore
                 for (const newDelegate of newProxyInfo[0]) {
+                    // @ts-ignore
                     msg += newDelegate['delegate'].toHuman() +", "+ newDelegate['proxyType'].toHuman()+ "; ";
                 }
                 //@ts-ignore

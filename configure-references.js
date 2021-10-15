@@ -13,6 +13,11 @@ const config = JSON.parse(fs.readFileSync('tsconfig.json').toString());
 config.files = [];
 config.references = [];
 
+console.log("WARN: Configuring references currently does not work. Need to add path dependencies to local deps manually.")
+/**
+ * Currently this one here fails for some reason when parsing tsconfig
+ * would be nice to have!
+ * Triggering solely a note, that prepare does not work currently.
 (async function() {
     if (isCI) {
         // dont run it on CI
@@ -61,3 +66,4 @@ config.references = [];
     }
     fs.writeFileSync('tsconfig.json', JSON.stringify(config, undefined, 4));
 })();
+ */
