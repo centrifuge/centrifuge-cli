@@ -88,35 +88,34 @@ async function transformIntoRewardee(
         let first250Bonus = BigInt(0);
 
         for (const contributor of contributions) {
-            let contribution = contributor.contribution;
+            let contributionAsAIR = contributor.contribution * config.decimalDifference * config.conversionRate;
+            finalReward += contributionAsAIR;
 
             let ownerOfCode = codes.get(contributor.memo);
-            if (ownerOfCode !== undefined) {
+            if (ownerOfCode !== undefined && contributors.has(ownerOfCode)) {
                 // Give the contributor the stuff he deserves
-                const plus = (contributor.contribution * config.referedPrct) / BigInt(100);
-                contribution += plus;
+                const referralReward = (contributionAsAIR * config.referedPrct) / BigInt(100);
+                finalReward += referralReward;
 
                 if (rewardees.has(ownerOfCode)) {
                     // @ts-ignore
                     let contributionOwnerOfCode: bigint = rewardees.get(ownerOfCode);
-                    rewardees.set(ownerOfCode, contributionOwnerOfCode + plus);
+                    rewardees.set(ownerOfCode, contributionOwnerOfCode + referralReward);
                 } else {
-                    rewardees.set(ownerOfCode, plus);
+                    rewardees.set(ownerOfCode, referralReward);
                 }
             }
 
             if (contributor.whenContributed <= config.earlyBirdBlock) {
-                contribution += (contributor.contribution * config.earlyBirdPrct) / BigInt(100);
+                finalReward += (contributionAsAIR * config.earlyBirdPrct) / BigInt(100);
                 earlyBirdApplied = true;
             }
 
             // We only add this bonus once
             if (contributor.first250PrevCrowdloan && !first250Added) {
-                first250Bonus = ((contributor.contribution * config.prevCrwdLoanPrct) / BigInt(100)) * config.decimalDifference;
+                first250Bonus = (contributionAsAIR * config.prevCrwdLoanPrct) / BigInt(100);
                 first250Added = true;
             }
-
-             finalReward += config.decimalDifference * contribution;
         }
 
         if (first250Added && !earlyBirdApplied) {
@@ -136,7 +135,7 @@ async function transformIntoRewardee(
     // Need to create AccountId types here
     for(const [account, reward] of rewardees) {
         const tAccount = api.createType("AccountId", account);
-        const tReward = api.createType("Balance", reward * config.conversionRate);
+        const tReward = api.createType("Balance", reward);
         typedRewardees.set(tAccount, tReward);
         logger.debug(`Finalizing rewards for account ${encodeAddress(account, 2)} (hex: ${account}) with reward of ${tReward.toHuman()}`)
     }
