@@ -1,4 +1,5 @@
 import {AccountId} from "@polkadot/types/interfaces";
+import {Configuration} from "ts-postgres";
 
 export interface Config {
     fundingAccount: string
@@ -50,9 +51,8 @@ export interface KusamaTransformConfig {
 }
 
 export interface Credentials {
-    gcloudPrivateKey: string,
-    gcloudClientEmail: string,
     executorURI: string
+    sqlCfg: Configuration,
 }
 
 export interface MerkleTree {

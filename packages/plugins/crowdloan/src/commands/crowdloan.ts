@@ -4,7 +4,8 @@ import {ApiPromise, WsProvider, Keyring} from "@polkadot/api";
 import {AccountId, Balance, EventRecord, Extrinsic, Hash} from "@polkadot/types/interfaces";
 import {KeyringPair} from "@polkadot/keyring/types";
 import { blake2AsHex } from "@polkadot/util-crypto";
-import {DownloadResponse, Storage} from "@google-cloud/storage";
+import {decodeAddress, encodeAddress} from "@polkadot/keyring";
+import { Client, Configuration } from 'ts-postgres';
 import * as fs from "fs";
 import {cryptoWaitReady} from "@polkadot/util-crypto"
 import {getContributions as getContributionsKusama} from "../crowdloan/kusama";
@@ -41,8 +42,7 @@ export default class Crowdloan extends CliBaseCommand {
     // The account that will initialize the pallets and also fund the reward pallet (sudo account)
     executor!: KeyringPair
 
-    gcloudPrivateKey!: string
-    gcloudClientEmail!: string
+    sqlCfg!: Configuration
 
     static description = 'Centrifuge cli command that allows to fetch crowdloan contributions from a relay chain and initialize ' +
         'the crowdloan modules on the parachain'
@@ -168,7 +168,7 @@ export default class Crowdloan extends CliBaseCommand {
             if (!flags["dry-run"]) {
                 if (!(funding.toBigInt() <= execBalance.free.toBigInt())) {
                     const additional = this.paraApi.createType("Balance", funding.toBigInt() - execBalance.free.toBigInt());
-                    throw new Error("Exec has " + execBalance.free.toHuman() + ". This is an insufficient balance. Needs " + additional.toHuman() + " more.")
+                    throw new Error("Exec has " + execBalance.free.toHuman() + ". This is an insufficient balance. Needs " + additional.toHuman() + " (exactly: " + additional.toBigInt() +") more.")
                 }
 
                 await this.initializePallets(tree, funding.toBigInt());
@@ -183,21 +183,25 @@ export default class Crowdloan extends CliBaseCommand {
                     this.logger.info("Exec has sufficient balance with " + execBalance.free.toHuman());
                 } else {
                     const additional = this.paraApi.createType("Balance", funding.toBigInt() - execBalance.free.toBigInt());
-                    this.logger.warn("Exec has " + execBalance.free.toHuman() + ". This is an insufficient balance. Needs " + additional.toHuman() + " more.");
+                    this.logger.warn("Exec has " + execBalance.free.toHuman() + ". Needs " + additional.toHuman() + " (exactly: " + additional.toBigInt() +") more.")
                 }
             }
 
-            this.paraApi.disconnect();
+            await this.paraApi.disconnect();
         } catch (err) {
             this.logger.error(err);
             // We need to manually disconnect here.
             try {
-                this.paraApi.disconnect();
+                await this.paraApi.disconnect();
             } catch (err) {
-                this.logger.error(err)
+                this.logger.error(err);
+                this.exit(2);
             }
-        }
 
+            this.exit(2);
+        }
+        this.logger.info("Crowdloan command finished.");
+        return;
     }
 
     private async parseCredentials(filePath: string) {
@@ -211,17 +215,11 @@ export default class Crowdloan extends CliBaseCommand {
 
             this.executor = await this.parseAccountFromURI(credentials.executorURI);
 
-            if (credentials.gcloudPrivateKey === undefined) {
-                return Promise.reject("Missing priavte key for gcloud");
-            } else {
-                this.gcloudPrivateKey = credentials.gcloudPrivateKey;
-            }
-            if (credentials.gcloudClientEmail === undefined) {
-                return Promise.reject("Missing gcloud client email.");
-            } else {
-                this.gcloudClientEmail = credentials.gcloudClientEmail;
+            if (credentials.sqlCfg === undefined) {
+                return Promise.reject("Missing sql configuration");
             }
 
+            this.sqlCfg = credentials.sqlCfg;
 
         } catch (err) {
             return Promise.reject(err);
@@ -746,21 +744,12 @@ export default class Crowdloan extends CliBaseCommand {
 
     private async getContributions(network: string): Promise<Map<AccountId, Balance>> {
         if (network === 'Kusama') {
-            const api = await Crowdloan.getApiPromise("wss://kusama-rpc.polkadot.io");
-            const codes =  await this.fetchCodesFromCloud(
-                api,
-                'centrifuge-production-x',
-                'altair_referral_codes'
-            );
-
-            api.disconnect().then().catch(err => this.logger.warn(err));
-
             return getContributionsKusama(
                 this.paraApi,
                 this.crwdloanCfg.crowdloans,
                 this.crwdloanCfg.transformation.kusama,
-                codes,
-                this.logger.getChildLogger({name: "Crowdloan - Kusama"})
+                this.logger.getChildLogger({name: "Crowdloan - Kusama"}),
+                this.sqlCfg
             );
         } else if (network === 'Polkadot') {
             return getContributionsPolkadot();
@@ -769,54 +758,98 @@ export default class Crowdloan extends CliBaseCommand {
         }
     }
 
-    // TODO: create a function that allows to take credentials of some form and then call the database accordingly
-    private async fetchCodesFromCloud(api: ApiPromise, projectId: string, bucket: string): Promise<Map<string, AccountId>> {
-        // check 1Password entry for "Altair Referral Code Bucket Credentials"
-        const GOOGLE_CLOUD_PRIVATE_KEY = this.gcloudPrivateKey;
-        const GOOGLE_CLOUD_CLIENT_EMAIL = this.gcloudClientEmail;
+    static async fetchAddressCodesSets(sqlCfg: Configuration): Promise<Map<string, Array<string>>> {
+        let data = new Map();
 
-        type ReferralCode = {
-            referralCode: string;
-            walletAddress: string;
-        };
+        const client = new Client(sqlCfg);
+        await client.connect();
 
-        const storage = new Storage({
-            projectId: projectId,
-            credentials: {
-                client_email: GOOGLE_CLOUD_CLIENT_EMAIL,
-                private_key: GOOGLE_CLOUD_PRIVATE_KEY,
-            },
-        });
+        const results = client.query(`
+           SELECT wallet_address, referral_code FROM altair 
+        `);
 
-        const referralCodeBucket = storage.bucket(bucket);
+        for await (const row of results) {
+            // @ts-ignore
+            const addressSS58: string = row.data[0];
+            const decoded = decodeAddress(addressSS58);
+            const address = '0x' + hexEncode(decoded);
+            // @ts-ignore
+            const code: string = row.data[1];
 
-        const [files] = await referralCodeBucket.getFiles();
+            data.has(address) ? data.get(address).push(code) : data.set(address, Array.from([code]));
+        }
 
-        this.logger.debug('Got ' + files.length + ' files.');
-        this.logger.debug('Downloading files now. This will take a while...');
+        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
+        return data;
+    }
 
-        let codes: Map<string, AccountId> = new Map();
-        let counter = 0;
-        for(const file of files){
-            const content = await referralCodeBucket.file(file.name).download();
+    static async fetchCodeAddressPairs(sqlCfg: Configuration): Promise<Map<string, string>> {
+        let data = new Map();
 
-            const encoded = {
-                walletAddress: api.createType("AccountId", content[0].toString('utf8')),
-                referralCode: file.name.replace('.txt', '').slice(2),
-            };
-            counter++;
-            this.logger.debug("Downloaded: " + counter + " of " + files.length + " \n    "
-                + "{account: " + encoded.walletAddress.toHuman() + ", referralCode: " + encoded.referralCode + "}");
+        const client = new Client(sqlCfg);
+        await client.connect();
 
-            codes.set(encoded.referralCode, encoded.walletAddress);
+        const results = client.query(`
+           SELECT wallet_address, referral_code FROM altair 
+        `);
 
-            // TODO: REMOVE
-            if (counter == 20 ) {
-                break;
+        for await (const row of results) {
+            // @ts-ignore
+            const addressSS58: string = row.data[0];
+            const decoded = decodeAddress(addressSS58);
+            const address = '0x' + hexEncode(decoded);
+            // @ts-ignore
+            const code: string = row.data[1];
+
+            if (data.has(code)) {
+                return Promise.reject("Inconsistent DB. Double code value")
+            } else {
+                data.set(code, address);
             }
         }
 
-        return codes;
+        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
+        return data;
+    }
+
+    static async fetchAddressFromCode(code: string, sqlCfg: Configuration): Promise<string | undefined> {
+        const client = new Client(sqlCfg);
+        await client.connect();
+
+        if (code === "") {
+            return;
+        }
+
+        const results = client.query(`
+            SELECT wallet_address FROM altair WHERE referral_code='${code}'
+        `);
+
+        let addressSS58: string | undefined;
+        for await (const row of results) {
+            // @ts-ignore
+            addressSS58 = row.data[0];
+        }
+
+        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
+        return addressSS58 === undefined ? undefined : '0x' + hexEncode(decodeAddress(addressSS58));
+    }
+
+    static async fetchCodesFromAddress(address: string, sqlCfg: Configuration): Promise<Array<string> | undefined> {
+        const client = new Client(sqlCfg);
+        await client.connect();
+
+        if (address === "") {
+            return;
+        }
+
+        const addressSS58 = encodeAddress(address,2);
+
+        const results = await client.query(`
+            SELECT referral_code FROM altair WHERE wallet_address='${addressSS58}'
+        `);
+
+        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
+        return ["results"];
     }
 
     private async generateContributions(): Promise<Map<AccountId, Balance>> {

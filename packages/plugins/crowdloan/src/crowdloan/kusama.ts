@@ -1,9 +1,13 @@
 import {ApiPromise} from "@polkadot/api";
 import {CrowdloanSpec, KusamaTransformConfig, TransformConfig} from "./interfaces";
 import {AccountId, Balance} from "@polkadot/types/interfaces";
-import * as Crowdloan from "../commands/crowdloan";
+import Crowdloan from "../commands/crowdloan";
 import {Logger as TsLogger} from 'tslog';
+import {BigNumber} from 'bignumber.js'
 import {BIT_SIGNED} from "@polkadot/types/extrinsic/constants";
+import ownKeys = Reflect.ownKeys;
+import {Configuration} from "ts-postgres";
+import {encodeAddress} from "@polkadot/keyring";
 
 const axios = require('axios').default;
 
@@ -11,33 +15,32 @@ export async function getContributions(
     paraApi: ApiPromise,
     crowdloans: Array<CrowdloanSpec>,
     config: KusamaTransformConfig,
-    codes: Map<string, AccountId>,
-    logger: TsLogger
+    logger: TsLogger,
+    sqlConfig: Configuration
 ): Promise<Map<AccountId, Balance>> {
     // Try fetching from web
-    let contributors:  Map<AccountId, Array<Contributor>>;
+    let contributors:  Map<string, Array<Contributor>>;
 
     try {
-        contributors = await fetchFromWebService(paraApi);
+        contributors = await fetchFromWebService();
     } catch (err) {
         logger.fatal("Could not fetch from webservice. Error: \n" + err);
         return Promise.reject(err);
     }
 
-    return await transformIntoRewardee(paraApi, config, codes, contributors);
+    return await transformIntoRewardee(paraApi, config, contributors, sqlConfig, logger);
 }
 
-async function fetchFromWebService(api: ApiPromise): Promise<Map<AccountId, Array<Contributor>>> {
-    let contributions: Map<AccountId, Array<Contributor>> = new Map();
+async function fetchFromWebService(): Promise<Map<string, Array<Contributor>>> {
+    let contributions: Map<string, Array<Contributor>> = new Map();
 
     try {
       let response = await axios.get('https://crowdloan-ws.centrifuge.io/contributions');
 
       let overall = BigInt(0);
-      // TODO: Not WORKING. THis for some reason does not catch that there are some of the same
+
       if (response !== undefined && response.status === 200 ) {
           for (const noType of response.data) {
-              let account = api.createType("AccountId", noType.account);
               const contributor: Contributor = {
                   account: noType.account,
                   contribution: BigInt(noType.contribution),
@@ -52,10 +55,9 @@ async function fetchFromWebService(api: ApiPromise): Promise<Map<AccountId, Arra
 
               overall += BigInt(noType.contribution);
 
-              // TODO: Change this one here to if and change account id to string!!
-              contributions.has(account)
-                  ? contributions.get(account)?.push(contributor)
-                  : contributions.set(account, Array.from([contributor]));
+              contributions.has(noType.account)
+                  ? contributions.get(noType.account)?.push(contributor)
+                  : contributions.set(noType.account, Array.from([contributor]));
           }
 
       } else {
@@ -72,15 +74,13 @@ async function fetchFromWebService(api: ApiPromise): Promise<Map<AccountId, Arra
 async function transformIntoRewardee(
     api: ApiPromise,
     config: KusamaTransformConfig,
-    codesToAccount: Map<string, AccountId>,
-    contributors: Map<AccountId, Array<Contributor>>
+    contributors: Map<string, Array<Contributor>>,
+    sqlConfig: Configuration,
+    logger: TsLogger
 ): Promise<Map<AccountId, Balance>> {
-    let rewardees: Map<AccountId, Balance> = new Map();
+    let rewardees: Map<string, bigint> = new Map();
 
-    // TODO REMOVE
-    let overall = BigInt(0);
-
-
+    const codes = await Crowdloan.fetchCodeAddressPairs(sqlConfig);
     for (const [account, contributions] of contributors) {
         let first250Added = false;
         let earlyBirdApplied = false;
@@ -90,22 +90,18 @@ async function transformIntoRewardee(
         for (const contributor of contributions) {
             let contribution = contributor.contribution;
 
-            overall += contribution;
-
-            if (codesToAccount.has(contributor.memo)) {
+            let ownerOfCode = codes.get(contributor.memo);
+            if (ownerOfCode !== undefined) {
                 // Give the contributor the stuff he deserves
                 const plus = (contributor.contribution * config.referedPrct) / BigInt(100);
                 contribution += plus;
 
-                // Give the owner of the referral code the same amount
-                // @ts-ignore
-                let ownerOfCode: AccountId = codesToAccount.get(contributor.memo);
                 if (rewardees.has(ownerOfCode)) {
                     // @ts-ignore
-                    let contributionOwnerOfCode: Balance = rewardees.get(ownerOfCode);
-                    rewardees.set(ownerOfCode, api.createType("Balance", contributionOwnerOfCode.toBigInt() + plus));
+                    let contributionOwnerOfCode: bigint = rewardees.get(ownerOfCode);
+                    rewardees.set(ownerOfCode, contributionOwnerOfCode + plus);
                 } else {
-                    rewardees.set(ownerOfCode, api.createType("Balance", plus));
+                    rewardees.set(ownerOfCode, plus);
                 }
             }
 
@@ -116,7 +112,7 @@ async function transformIntoRewardee(
 
             // We only add this bonus once
             if (contributor.first250PrevCrowdloan && !first250Added) {
-                first250Bonus = (contributor.contribution * config.prevCrwdLoanPrct) / BigInt(100);
+                first250Bonus = ((contributor.contribution * config.prevCrwdLoanPrct) / BigInt(100)) * config.decimalDifference;
                 first250Added = true;
             }
 
@@ -129,16 +125,23 @@ async function transformIntoRewardee(
 
         if (rewardees.has(account)){
             // @ts-ignore
-            let alreadyContribution: Balance = rewardees.get(account);
-            rewardees.set(account, api.createType("Balance", alreadyContribution.toBigInt() + finalReward));
+            let alreadyContribution: bigint = rewardees.get(account);
+            rewardees.set(account, alreadyContribution + finalReward);
         } else {
-            rewardees.set(account, api.createType("Balance", finalReward));
+            rewardees.set(account, finalReward);
         }
     }
 
-    // TODO: REMOVE
-    console.log("!!!! OVERALL: " + api.createType("Balance", overall).toHuman());
-    return rewardees;
+    let typedRewardees = new Map();
+    // Need to create AccountId types here
+    for(const [account, reward] of rewardees) {
+        const tAccount = api.createType("AccountId", account);
+        const tReward = api.createType("Balance", reward * config.conversionRate);
+        typedRewardees.set(tAccount, tReward);
+        logger.debug(`Finalizing rewards for account ${encodeAddress(account, 2)} (hex: ${account}) with reward of ${tReward.toHuman()}`)
+    }
+
+    return typedRewardees;
 }
 
 interface Contributor {
