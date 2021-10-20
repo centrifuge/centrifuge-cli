@@ -80,7 +80,7 @@ async function transformIntoRewardee(
 ): Promise<Map<AccountId, Balance>> {
     let rewardees: Map<string, bigint> = new Map();
 
-    const codes = await Crowdloan.fetchCodeAddressPairs(sqlConfig);
+    const codes = await Crowdloan.fetchCodeAddressPairs('altair', sqlConfig);
     for (const [account, contributions] of contributors) {
         let first250Added = false;
         let earlyBirdApplied = false;

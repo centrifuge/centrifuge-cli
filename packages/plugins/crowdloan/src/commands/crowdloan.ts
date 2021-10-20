@@ -758,14 +758,14 @@ export default class Crowdloan extends CliBaseCommand {
         }
     }
 
-    static async fetchAddressCodesSets(sqlCfg: Configuration): Promise<Map<string, Array<string>>> {
+    static async fetchAddressCodesSets(table: string, sqlCfg: Configuration): Promise<Map<string, Array<string>>> {
         let data = new Map();
 
         const client = new Client(sqlCfg);
         await client.connect();
 
         const results = client.query(`
-           SELECT wallet_address, referral_code FROM altair 
+           SELECT wallet_address, referral_code FROM ${table} 
         `);
 
         for await (const row of results) {
@@ -783,14 +783,14 @@ export default class Crowdloan extends CliBaseCommand {
         return data;
     }
 
-    static async fetchCodeAddressPairs(sqlCfg: Configuration): Promise<Map<string, string>> {
+    static async fetchCodeAddressPairs(table: string, sqlCfg: Configuration): Promise<Map<string, string>> {
         let data = new Map();
 
         const client = new Client(sqlCfg);
         await client.connect();
 
         const results = client.query(`
-           SELECT wallet_address, referral_code FROM altair 
+           SELECT wallet_address, referral_code FROM ${table} 
         `);
 
         for await (const row of results) {
@@ -812,7 +812,7 @@ export default class Crowdloan extends CliBaseCommand {
         return data;
     }
 
-    static async fetchAddressFromCode(code: string, sqlCfg: Configuration): Promise<string | undefined> {
+    static async fetchAddressFromCode(code: string, table: string, sqlCfg: Configuration): Promise<string | undefined> {
         const client = new Client(sqlCfg);
         await client.connect();
 
@@ -821,7 +821,7 @@ export default class Crowdloan extends CliBaseCommand {
         }
 
         const results = client.query(`
-            SELECT wallet_address FROM altair WHERE referral_code='${code}'
+            SELECT wallet_address FROM ${table} WHERE referral_code='${code}'
         `);
 
         let addressSS58: string | undefined;
@@ -834,7 +834,7 @@ export default class Crowdloan extends CliBaseCommand {
         return addressSS58 === undefined ? undefined : '0x' + hexEncode(decodeAddress(addressSS58));
     }
 
-    static async fetchCodesFromAddress(address: string, sqlCfg: Configuration): Promise<Array<string> | undefined> {
+    static async fetchCodesFromAddress(address: string, table: string, sqlCfg: Configuration): Promise<Array<string> | undefined> {
         const client = new Client(sqlCfg);
         await client.connect();
 
@@ -844,12 +844,19 @@ export default class Crowdloan extends CliBaseCommand {
 
         const addressSS58 = encodeAddress(address,2);
 
-        const results = await client.query(`
-            SELECT referral_code FROM altair WHERE wallet_address='${addressSS58}'
+        const results = client.query(`
+            SELECT referral_code FROM ${table} WHERE wallet_address='${addressSS58}'
         `);
 
         client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
-        return ["results"];
+
+        let codes: Array<string> = [];
+        for await (const row of results) {
+            // @ts-ignore
+            codes.push(row.data[0]);
+        }
+
+        return codes;
     }
 
     private async generateContributions(): Promise<Map<AccountId, Balance>> {
