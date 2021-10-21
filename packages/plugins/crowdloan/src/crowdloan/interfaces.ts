@@ -2,7 +2,6 @@ import {AccountId} from "@polkadot/types/interfaces";
 import {Configuration} from "ts-postgres";
 
 export interface Config {
-    fundingAccount: string
     // The first one is regarded as the current crowdloan
     // All further specs will be seens as previous loans
     crowdloans: Array<CrowdloanSpec>

@@ -163,27 +163,11 @@ export default class Crowdloan extends CliBaseCommand {
 
             const funding: Balance = await this.calculateFunding(tree);
 
-            const { data: execBalance } = await this.paraApi.query.system.account(this.crwdloanCfg.fundingAccount);
-
             if (!flags["dry-run"]) {
-                if (!(funding.toBigInt() <= execBalance.free.toBigInt())) {
-                    const additional = this.paraApi.createType("Balance", funding.toBigInt() - execBalance.free.toBigInt());
-                    throw new Error("Exec has " + execBalance.free.toHuman() + ". This is an insufficient balance. Needs " + additional.toHuman() + " (exactly: " + additional.toBigInt() +") more.")
-                }
-
                 await this.initializePallets(tree, funding.toBigInt());
 
                 if(flags.test && flags.simulate) {
                     await this.runTest(tree);
-                }
-            } else {
-                this.logger.info("The RewardPallet needs a funding of at least " + funding.toHuman());
-
-                if (funding.toBigInt() <= execBalance.free.toBigInt()) {
-                    this.logger.info("Exec has sufficient balance with " + execBalance.free.toHuman());
-                } else {
-                    const additional = this.paraApi.createType("Balance", funding.toBigInt() - execBalance.free.toBigInt());
-                    this.logger.warn("Exec has " + execBalance.free.toHuman() + ". Needs " + additional.toHuman() + " (exactly: " + additional.toBigInt() +") more.")
                 }
             }
 
@@ -277,9 +261,6 @@ export default class Crowdloan extends CliBaseCommand {
 
     private static async checkConfig(network: string, config: Config): Promise<void> {
         // Check Config
-        if (config.fundingAccount === undefined) {
-            return Promise.reject("Missing `FundingAccount`")
-        }
         if (config.crowdloans === undefined || config.crowdloans.length === 0) {
             return Promise.reject("Missing `Crowdloans`")
         }
@@ -378,7 +359,7 @@ export default class Crowdloan extends CliBaseCommand {
             maybeFull32Bytes.push(0);
         }
         const rewardPalletAddr = this.paraApi.createType("AccountId", Uint8Array.from(maybeFull32Bytes));
-        const fundingAccount = this.paraApi.createType("AccountId", this.crwdloanCfg.fundingAccount);
+        const {data: rewardPalletBalance} = await this.paraApi.query.system.account(rewardPalletAddr);
 
         let finalized = false;
         let startBlock = (await this.paraApi.rpc.chain.getHeader()).number.toBigInt();
@@ -402,10 +383,10 @@ export default class Crowdloan extends CliBaseCommand {
                         this.crwdloanCfg.rewardPallet.vestingPeriod,
                         this.crwdloanCfg.rewardPallet.vestingStart,
                     ),
-                    this.paraApi.tx.balances.forceTransfer(
-                        fundingAccount,
+                    this.paraApi.tx.balances.setBalance(
                         rewardPalletAddr,
-                        funding
+                        rewardPalletBalance.free.toBigInt() + funding,
+                        rewardPalletBalance.reserved.toBigInt()
                     )
                 ])
             ).signAndSend(this.executor, (result) => {
