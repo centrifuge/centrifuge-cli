@@ -102,6 +102,7 @@ export default class Crowdloan extends CliBaseCommand {
         try {
             const {args, flags} = this.parse(Crowdloan)
 
+            this.logger.info("Connecting to chain " + flags.para);
             this.paraApi = await Crowdloan.getApiPromise(flags.para, {
                 RootHashOf: 'Hash',
                 TrieIndex: 'u32',
@@ -121,6 +122,7 @@ export default class Crowdloan extends CliBaseCommand {
 
             let contributions: Map<AccountId, Balance>;
             if (flags['run-from-tree'] === undefined) {
+                this.logger.info("Generating contributions.");
                  contributions = (flags.simulate)
                     ? await this.generateContributions()
                     : await this.getContributions(flags.relay);
@@ -143,6 +145,7 @@ export default class Crowdloan extends CliBaseCommand {
                 }
             }
 
+            this.logger.info("Creating Merkle Tree.");
             const tree: MerkleTree = (flags['run-from-tree'] === undefined)
                 // @ts-ignore // We assign "contribution" above, when have flag NOT set
                 ? await Crowdloan.generateMerkleTree(contributions)
@@ -163,10 +166,12 @@ export default class Crowdloan extends CliBaseCommand {
 
             const funding: Balance = await this.calculateFunding(tree);
 
+            this.logger.info("Accumulated rewards are " + funding.toHuman());
             if (!flags["dry-run"]) {
                 await this.initializePallets(tree, funding.toBigInt());
 
                 if(flags.test && flags.simulate) {
+                    this.logger.info("Starting to run tests now.");
                     await this.runTest(tree);
                 }
             }
@@ -534,7 +539,7 @@ export default class Crowdloan extends CliBaseCommand {
                         if(errorNum !== signal) {
                             this.logger.error("Error signal was not expected. Wanted: " + signal+ ", got: " + errorNum);
                         } else {
-                            this.logger.error("Failed correclty with signal " + signal);
+                            this.logger.info("Failed correctly with signal " + signal);
                         }
                     } catch (err) {
                         this.logger.error("Could not retrieve error signal. Got: \n" + err);
@@ -584,6 +589,7 @@ export default class Crowdloan extends CliBaseCommand {
             }
 
             try {
+                this.logger.info("Claiming correctly with xt:" + xt.toHuman());
                 await xt.send();
             } catch (err) {
                 this.logger.error(err);
@@ -611,7 +617,7 @@ export default class Crowdloan extends CliBaseCommand {
                         if(errorNum !== signal) {
                             this.logger.error("Error signal was not expected. Wanted: " + signal+ ", got: " + errorNum);
                         } else {
-                            this.logger.error("Failed correclty with signal " + signal);
+                            this.logger.info("Failed correctly with signal " + signal);
                         }
                     } catch (err) {
                         this.logger.error("Could not retrieve error signal. Got: \n" + err);
