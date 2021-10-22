@@ -1,8 +1,8 @@
 import {ApiTypes, SubmittableExtrinsic} from "@polkadot/api/types";
 import {xxhashAsHex} from "@polkadot/util-crypto";
 import {ApiPromise, Keyring, SubmittableResult, WsProvider} from "@polkadot/api";
-import {Hash} from "@polkadot/types/interfaces";
 import {KeyringPair} from "@polkadot/keyring/types";
+import {Hash} from "@polkadot/types/interfaces";
 
 export class Dispatcher {
     readonly maxConcurrent: number;

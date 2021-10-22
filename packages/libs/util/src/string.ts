@@ -1,6 +1,6 @@
 
 // TODO: Not sure if this will work for utf-16 characters
-export async function toUtf8ByteArray(str: string): Promise<Uint8Array>  {
+export function toUtf8ByteArray(str: string): Uint8Array  {
     let out = new Uint8Array(str.length);
     let p = 0;
     for (let i = 0; i < str.length; i++) {

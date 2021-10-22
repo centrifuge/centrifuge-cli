@@ -20,7 +20,7 @@
   "dependencies": {
     "@oclif/command": "^1.8.0",
     "@polkadot/api": "^4.16.2",
-    "@polkadot/types": "^4.16.2",
+
     "tslog": "^3.2.1"
   }
 }

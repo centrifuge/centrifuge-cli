@@ -92,15 +92,15 @@ export abstract class CliBaseCommand extends BaseCommand {
     }
 
     /**
-     * Allows to easily read files from the base directory of the cli or the command specific folder of the cli
+     * Allows to easily read files from the command directory of the cli or the command specific sub-folder of the cli
      *
      */
     readFile(file: string, folder?: string): Buffer {
         if(folder === undefined) {
-            const filePath = this.dirBase + '/' + file;
+            const filePath = this.dirCommand + '/' + file;
             return fs.readFileSync(filePath);
         } else {
-            const filePath = this.dirCommand + '/' + file;
+            const filePath = this.dirCommand + '/' + folder  + '/' + file;
             return fs.readFileSync(filePath);
         }
     }

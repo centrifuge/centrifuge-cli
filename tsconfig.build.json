@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "es2017",
     "outDir": "./dist",
+    "sourceMap": true,
     "module": "commonjs",
     "strict": true,
     "allowSyntheticDefaultImports": true,
