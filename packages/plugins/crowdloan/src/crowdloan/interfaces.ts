@@ -67,6 +67,6 @@ export interface Proof {
 
 export interface Signature {
     signer: string,
-    msg: Uint8Array,
+    msg: string |Uint8Array,
     signature: Uint8Array,
 }

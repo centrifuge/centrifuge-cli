@@ -222,8 +222,7 @@ export default class Crowdloan extends CliBaseCommand {
             funding += contribution;
         }
 
-        // We increase by one as we want the PalletId to be kept alive on-chain
-        return this.paraApi.createType("Balance", funding + BigInt(1));
+        return this.paraApi.createType("Balance", funding);
     }
 
     private async parseAccountFromURI(uri: string): Promise<KeyringPair> {
@@ -357,15 +356,6 @@ export default class Crowdloan extends CliBaseCommand {
     }
 
     private async initializePallets(tree: MerkleTree, funding: bigint): Promise<void> {
-        const palletAddressString = await hexEncode("modl")
-            + (await this.paraApi.consts.crowdloanReward.palletId).toHex().slice(2);
-        const maybeFull32Bytes = Array.from(await hexDecode(palletAddressString));
-        while (maybeFull32Bytes.length <= 32) {
-            maybeFull32Bytes.push(0);
-        }
-        const rewardPalletAddr = this.paraApi.createType("AccountId", Uint8Array.from(maybeFull32Bytes));
-        const {data: rewardPalletBalance} = await this.paraApi.query.system.account(rewardPalletAddr);
-
         let finalized = false;
         let startBlock = (await this.paraApi.rpc.chain.getHeader()).number.toBigInt();
 
@@ -387,11 +377,6 @@ export default class Crowdloan extends CliBaseCommand {
                         this.crwdloanCfg.rewardPallet.directPayoutRatio * BigInt(10_000_000),
                         this.crwdloanCfg.rewardPallet.vestingPeriod,
                         this.crwdloanCfg.rewardPallet.vestingStart,
-                    ),
-                    this.paraApi.tx.balances.setBalance(
-                        rewardPalletAddr,
-                        rewardPalletBalance.free.toBigInt() + funding,
-                        rewardPalletBalance.reserved.toBigInt()
                     )
                 ])
             ).signAndSend(this.executor, (result) => {
@@ -417,6 +402,7 @@ export default class Crowdloan extends CliBaseCommand {
     }
 
     private async runTest(tree: MerkleTree): Promise<void> {
+
         // Prepare Error Claims
         let errorClaims: Array<[any, number]> = [];
         for (const [id, [key, amount]] of this.syntheticAccounts)  {
@@ -524,7 +510,7 @@ export default class Crowdloan extends CliBaseCommand {
         let counterError = 0;
         for (const [xt, signal] of errorClaims) {
             if(counterError % batchError === 0) {
-                await new Promise(resolve => setTimeout(resolve, 6000));
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
 
             // Send all claims that are not double claim
@@ -550,21 +536,35 @@ export default class Crowdloan extends CliBaseCommand {
             counterError++;
         }
 
+
         let claims = [];
         // Claim correctly first for all
         for (const [id, [key, amount]] of this.syntheticAccounts) {
             const proof = await Crowdloan.createProof(tree, id.toHex());
 
-            const signature = await Crowdloan.createSignature(key, id.toU8a());
-            const sigTSr25519 = this.paraApi.createType("Sr25519Signature", signature.signature);
-            const sigTMultiSig = this.paraApi.createType("MultiSignature", {sr25519: sigTSr25519});
+            const signature = await Crowdloan.createSignature(key, id.toHex());
+
+            let sigTMultiSig;
+            if (key.type == "sr25519") {
+                this.logger.debug("Creating Sr25519 signature. For account " + id.toHex());
+                const sigTSr25519 = this.paraApi.createType("Sr25519Signature", '0x' + hexEncode(signature.signature));
+                sigTMultiSig = this.paraApi.createType("MultiSignature", {sr25519: sigTSr25519});
+            } else if (key.type == "ed25519") {
+                this.logger.debug("Creating Ed25519 signature. For account " + id.toHex());
+                const sigTEd25519 = this.paraApi.createType("Ed25519Signature", '0x' + hexEncode(signature.signature));
+                sigTMultiSig = this.paraApi.createType("MultiSignature", {ed25519: sigTEd25519});
+            } else {
+                this.logger.debug("Creating Ecdsa signature. For account " + id.toHex());
+                const sigTEcdsa = this.paraApi.createType("EcdsaSignature", '0x' + hexEncode(signature.signature));
+                sigTMultiSig = this.paraApi.createType("MultiSignature", {ecdsa: sigTEcdsa});
+            }
+
             // @ts-ignore
             const proofT = this.paraApi.createType("Proof", {
                 leafHash: this.paraApi.createType("Hash", proof.leafHash),
                 sortedHashes: this.paraApi.createType("Vec<Hash>", proof.sortedHashes)
             });
             const amountT = this.paraApi.createType("Balance", amount);
-
 
             try {
                 claims.push(
@@ -585,11 +585,11 @@ export default class Crowdloan extends CliBaseCommand {
         let counter = 0;
         for (const xt of claims) {
             if(counter % batch === 0) {
-                await new Promise(resolve => setTimeout(resolve, 6000));
+                await new Promise(resolve => setTimeout(resolve, 12000));
             }
 
             try {
-                this.logger.info("Claiming correctly with xt:" + xt.toHuman());
+                this.logger.info("Claiming correctly...");
                 await xt.send();
             } catch (err) {
                 this.logger.error(err);
@@ -598,11 +598,12 @@ export default class Crowdloan extends CliBaseCommand {
             counter++;
         }
 
+
         const batchDoubleClaim = 100;
         let counterDoubleClaim = 0;
         for (const [xt, signal] of errorClaims) {
             if(counterDoubleClaim % batchDoubleClaim === 0) {
-                await new Promise(resolve => setTimeout(resolve, 6000));
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
 
             // Send all claims that are double claim
@@ -627,6 +628,8 @@ export default class Crowdloan extends CliBaseCommand {
 
             counterDoubleClaim++;
         }
+
+
     }
 
     private static async createProof(tree: MerkleTree, id: string): Promise<Proof> {
@@ -721,7 +724,7 @@ export default class Crowdloan extends CliBaseCommand {
         }
     }
 
-    private static async createSignature(key: KeyringPair, msg: Uint8Array): Promise<Signature> {
+    private static async createSignature(key: KeyringPair, msg: string | Uint8Array): Promise<Signature> {
         return {
             signer: key.address,
             msg: msg,
@@ -851,18 +854,33 @@ export default class Crowdloan extends CliBaseCommand {
         let contributions = BigInt(0);
         let contributors: Map<AccountId, Balance> = new Map();
 
-        const keyring = new Keyring({ type: 'sr25519' });
+        const keyringEcdsa = new Keyring({ type: 'ecdsa' });
+        const keyringSr25519 = new Keyring({ type: 'sr25519' });
+        const keyringEd25519 = new Keyring({ type: 'ed25519' });
         let counter = 0;
 
         while(contributions <= (BigInt(90) * maxContributions)/BigInt(100)) {
             let amount = ((BigInt(Math.floor(Math.random()*100)) * maxContributions)/BigInt(100_000));
+            amount = amount / BigInt(10000000000);
+            amount = amount * BigInt(10000000000);
 
             if(amount + contributions <= maxContributions) {
                 contributions += amount;
 
                 counter += 1;
-                let keypair = keyring.addFromUri(`TestAccount${counter}`);
-                let account =  this.paraApi.createType("AccountId", keypair.addressRaw);
+                let type = Math.floor(Math.random()*100);
+                let keypair;
+                let account;
+                if (0 <= type && type < 40) {
+                    keypair = keyringSr25519.addFromUri(`TestAccount${counter}`);
+                    account =  this.paraApi.createType("AccountId", keypair.addressRaw);
+                } else if (40 <= type && type < 80) {
+                    keypair = keyringEd25519.addFromUri(`TestAccount${counter}`);
+                    account =  this.paraApi.createType("AccountId", keypair.addressRaw);
+                } else {
+                    keypair = keyringEcdsa.addFromUri(`TestAccount${counter}`);
+                    account =  this.paraApi.createType("AccountId", keypair.addressRaw);
+                }
 
                 // Fill in storage which we will need to sign stuff later on
                 this.syntheticAccounts.set(account, [keypair, amount]);
