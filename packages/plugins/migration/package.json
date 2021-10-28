@@ -1,6 +1,7 @@
 {
   "name": "@centrifuge-cli/plugin-migration",
   "version": "0.1.0",
+  "type": "commonjs",
   "license": "Apache-2",
   "author": "Centrifuge <admin@centrifuge.io>",
   "main": "dist/index.js",
@@ -23,8 +24,7 @@
   },
   "dependencies": {
     "@oclif/command": "^1.8.0",
-    "@polkadot/api": "^4.16.2",
-
+    "@polkadot/api": "^6.5.2",
     "@centrifuge-cli/core": "0.1.0",
     "@centrifuge-cli/dispatcher": "0.1.0",
     "json-bigint": "^1.0.0"
@@ -37,8 +37,6 @@
     ]
   },
   "files": [
-    "/dist",
-    "/oclif.manifest.json",
-    "/yarn.lock"
+    "/dist"
   ]
 }

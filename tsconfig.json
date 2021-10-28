@@ -17,9 +17,6 @@
             "@centrifuge-cli/plugin-chain/*": [
                 "plugins/chain/src/*"
             ],
-            "@centrifuge-cli/plugin-grant/*": [
-                "plugins/grant/src/*"
-            ],
             "@centrifuge-cli/plugin-migration/*": [
                 "plugins/migration/src/*"
             ],
@@ -47,9 +44,6 @@
         },
         {
             "path": "packages/plugins/chain"
-        },
-        {
-            "path": "packages/plugins/grant"
         },
         {
             "path": "packages/plugins/migration"
