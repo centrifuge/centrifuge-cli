@@ -1,6 +1,7 @@
 {
   "name": "@centrifuge-cli/dispatcher",
   "version": "0.1.0",
+  "type": "commonjs",
   "license": "Apache-2",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,6 +19,6 @@
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0"
   },
   "dependencies": {
-    "@polkadot/api": "^4.16.2"
+    "@polkadot/api": "^6.5.2"
   }
 }

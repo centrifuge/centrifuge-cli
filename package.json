@@ -1,6 +1,7 @@
 {
   "name": "root",
   "private": true,
+  "type": "commonjs",
   "workspaces": {
     "packages": [
       "packages/*",
@@ -18,6 +19,9 @@
     "eslint": "^7.32.0",
     "jest": "^27.1.0",
     "lerna": "^4.0.0",
-    "typescript": "^4.4.2"
+    "typescript": "^4.4.4"
+  },
+  "dependencies": {
+    "yarn": "^1.22.17"
   }
 }

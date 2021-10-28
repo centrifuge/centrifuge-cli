@@ -3,7 +3,8 @@
     "compilerOptions": {
         "composite": true,
         "rootDir": "src",
-        "outDir": "dist"
+        "outDir": "dist",
+        "sourceMap": true
     },
     "references": [
         {
@@ -11,9 +12,6 @@
         },
         {
             "path": "../plugins/migration"
-        },
-        {
-            "path": "../plugins/grant"
         },
         {
             "path": "../plugins/crowdloan"
