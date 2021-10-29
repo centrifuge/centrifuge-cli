@@ -70,3 +70,8 @@ export interface Signature {
     msg: string |Uint8Array,
     signature: Uint8Array,
 }
+
+export interface Contribution {
+    address: string,
+    contribution: bigint
+}

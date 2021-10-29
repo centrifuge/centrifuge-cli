@@ -23,7 +23,7 @@ import {
     MerkleTree,
     Credentials,
     Proof,
-    Signature
+    Signature, Contribution
 } from "../crowdloan/interfaces";
 import {RegistryTypes} from "@polkadot/types/types";
 import {SubmittableExtrinsic} from "@polkadot/api/types";
@@ -84,6 +84,10 @@ export default class Crowdloan extends CliBaseCommand {
             description: 'Allows to initialize the pallets with a tree previsouly created with this script',
             exclusive: ['simulate']
         }),
+        'append-tree': flags.string({
+            description: 'Allows to append data that should go into a merkle-tree, that are not coming from contributions.',
+            exclusive: ['simulate']
+        }),
         'simulate':  flags.boolean({
             description: 'if present, the data from the contributions will be simulated and not fetched from a relay chain',
         }),
@@ -126,6 +130,10 @@ export default class Crowdloan extends CliBaseCommand {
                  contributions = (flags.simulate)
                     ? await this.generateContributions()
                     : await this.getContributions(flags.relay);
+
+                 if(flags['append-tree'] !== undefined) {
+                     await this.appendContributions(contributions, flags["append-tree"]);
+                 }
 
                 if (flags.simulate) {
                     let asArray = new Array();
@@ -990,6 +998,41 @@ export default class Crowdloan extends CliBaseCommand {
             }
 
             return tree;
+        } catch (err) {
+            return Promise.reject(err);
+        }
+    }
+
+    private async appendContributions(contributions: Map<AccountId, Balance>, filePath: string) {
+        try {
+            let file = fs.readFileSync(filePath);
+            let additionals: Array<Contribution> = JSONbig.parse(file.toString());
+
+            const check = (value: Contribution) => {
+                if(value.address === undefined) {
+                    return Promise.reject("Invalid additional contributions parsed. Value is: " + value);
+                }
+                if(value.contribution === undefined ) {
+                    return Promise.reject("Invalid additional contributions parsed. Value is: " + value);
+                }
+            }
+
+            additionals.forEach((contributor) => {
+                check(contributor);
+
+                const accountId = this.paraApi.createType("AccountId", contributor.address);
+
+                if (contributions.has(accountId)) {
+                    const existContribution = contributions.get(accountId);
+                    contributions.set(accountId,
+                        this.paraApi.createType("Balance",
+                            // @ts-ignore - We check that above
+                            existContribution.toBigInt() + contributor.contribution)
+                    );
+                } else {
+                    contributions.set(accountId, this.paraApi.createType("Balance", contributor.contribution));
+                }
+            })
         } catch (err) {
             return Promise.reject(err);
         }
