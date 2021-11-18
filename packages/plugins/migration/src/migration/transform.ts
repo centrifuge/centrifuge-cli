@@ -239,11 +239,21 @@ async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromis
         // * (locked/per_block): Number blocks on mainnet overall
         // * snapshot_block - starting_block: Number of vested blocks
         // * subtraction of the above two: How many blocks remain
-        // * Division by two: Take into account 12s block time
-        let remainingBlocks = (blockPeriodOldVesting - blocksPassedSinceVestingStart) / BigInt(2);
+        let remainingBlocks = (blockPeriodOldVesting - blocksPassedSinceVestingStart);
         // This defines the remaining locked amount. Same as if a person has called vest once at the snapshot block.
         remainingLocked = old.locked.toBigInt() - (blocksPassedSinceVestingStart * old.perBlock.toBigInt());
-        newPerBlock = remainingLocked / remainingBlocks;
+        // Ensure remaining locked is greater zero
+        if (remainingLocked === BigInt(0)) {
+            remainingLocked = BigInt(1);
+        }
+        // * Multiplication by two: Take into account 12s block time
+        newPerBlock = (remainingLocked / remainingBlocks) * BigInt(2);
+        // Ensure remaining locked is greater zero
+        // If we are here, this must be checked manually...
+        if (newPerBlock === BigInt(0)) {
+            const info = toApi.createType("VestingInfo", [remainingLocked, newPerBlock, atTo]);
+            throw Error("Invalid vesting schedule. \nStorageKey: " + completeKey.toHex() + "\n VestingInfo: " + info.toHuman());
+        }
         newStartingBlock = atTo;
 
     } else if ((blockPeriodOldVesting - blocksPassedSinceVestingStart) <= 0 ) {
