@@ -1065,7 +1065,7 @@ export default class Crowdloan extends CliBaseCommand {
                 }
             })
         } catch (err) {
-            return Promise.reject(err);
+            return Promise.reject("Failed in appending contributors: \n" + err);
         }
     }
 }
