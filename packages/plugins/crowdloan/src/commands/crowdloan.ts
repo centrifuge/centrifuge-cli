@@ -1,7 +1,7 @@
 import {Command, flags} from '@oclif/command'
 import {IConfig} from "@oclif/config";
 import {ApiPromise, WsProvider, Keyring} from "@polkadot/api";
-import {AccountId, Balance, EventRecord, Extrinsic, Hash} from "@polkadot/types/interfaces";
+import {EventRecord, Extrinsic, Hash} from "@polkadot/types/interfaces";
 import {KeyringPair} from "@polkadot/keyring/types";
 import { blake2AsHex } from "@polkadot/util-crypto";
 import {decodeAddress, encodeAddress} from "@polkadot/keyring";
@@ -10,24 +10,30 @@ import * as fs from "fs";
 import {cryptoWaitReady} from "@polkadot/util-crypto"
 import {getContributions as getContributionsKusama} from "../crowdloan/kusama";
 import {getContributions as getContributionsPolkadot} from "../crowdloan/polkadot";
+import { parse } from 'csv-parse';
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
-import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray, hexDecode, LeU64Bytes} from "@centrifuge-cli/util"
+import {
+    hexEncode,
+    LeU32Bytes,
+    toUtf8ByteArray,
+    fromUtf8ByteArray,
+    hexDecode,
+    LeU64Bytes,
+    LeU128Bytes
+} from "@centrifuge-cli/util"
 import {CliBaseCommand} from "@centrifuge-cli/core";
 
 import {
     Config,
-    CrowdloanSpec,
-    TransformConfig,
     MerkleTree,
     Credentials,
     Proof,
-    Signature, Contribution
+    Signature, Contribution,
+    Balance, AccountId, Additionals
 } from "../crowdloan/interfaces";
 import {RegistryTypes} from "@polkadot/types/types";
-import {SubmittableExtrinsic} from "@polkadot/api/types";
-
 
 export default class Crowdloan extends CliBaseCommand {
     // Configuration parsed from JSON
@@ -131,17 +137,19 @@ export default class Crowdloan extends CliBaseCommand {
                     ? await this.generateContributions()
                     : await this.getContributions(flags.relay);
 
-                 if(flags['append-tree'] !== undefined) {
-                     await this.appendContributions(contributions, flags["append-tree"]);
-                 }
+                if(flags['append-tree'] !== undefined) {
+                    await this.appendContributions(contributions, flags["append-tree"]);
+                }
 
                 if (flags.simulate) {
                     let asArray = new Array();
-                    this.syntheticAccounts.forEach(([keyPair, amount], id) => asArray.push({
-                        account: id.toHex(),
-                        keyPair: keyPair.toJson(),
-                        contribution: amount
-                    }));
+                    this.syntheticAccounts.forEach(([keyPair, amount], id) => {
+                        asArray.push({
+                            account: id,
+                            keyPair: keyPair.toJson(),
+                            contribution: amount
+                        });
+                    });
 
                     let fileName = 'syntheticContributors-' + Date.now() + '.json';
                     try {
@@ -172,11 +180,11 @@ export default class Crowdloan extends CliBaseCommand {
                 this.logger.info("Merkle tree: \n" +JSONbig.stringify(tree, null, '\t'));
             }
 
-            const funding: Balance = await this.calculateFunding(tree);
+            const funding = await this.calculateFunding(tree);
 
-            this.logger.info("Accumulated rewards are " + funding.toHuman());
+            this.logger.info("Accumulated rewards are " + this.paraApi.createType("Balance", funding).toHuman());
             if (!flags["dry-run"]) {
-                await this.initializePallets(tree, funding.toBigInt());
+                await this.initializePallets(tree, funding);
 
                 if(flags.test && flags.simulate) {
                     this.logger.info("Starting to run tests now.");
@@ -230,7 +238,7 @@ export default class Crowdloan extends CliBaseCommand {
             funding += contribution;
         }
 
-        return this.paraApi.createType("Balance", funding);
+        return funding;
     }
 
     private async parseAccountFromURI(uri: string): Promise<KeyringPair> {
@@ -414,7 +422,7 @@ export default class Crowdloan extends CliBaseCommand {
         // Prepare Error Claims
         let errorClaims: Array<[any, number]> = [];
         for (const [id, [key, amount]] of this.syntheticAccounts)  {
-            const proof =  await Crowdloan.createProof(tree, id.toHex());
+            const proof =  await Crowdloan.createProof(tree, id);
 
             // Get a random number between 1 and 100
             let rnd = Math.floor(Math.random()*100);
@@ -427,7 +435,7 @@ export default class Crowdloan extends CliBaseCommand {
 
             if (0 <= rnd && rnd < 20) {
                 // Normal double claim
-                signature = await Crowdloan.createSignature(key, id.toU8a());
+                signature = await Crowdloan.createSignature(key, id);
                 // @ts-ignore
                 proofT = this.paraApi.createType("Proof", {
                     leafHash: this.paraApi.createType("Hash",proof.leafHash),
@@ -451,7 +459,7 @@ export default class Crowdloan extends CliBaseCommand {
                 errorSignal = 2;
             } else if (40 <= rnd && rnd < 60) {
                 // Wrong amount
-                signature = await Crowdloan.createSignature(key, id.toU8a());
+                signature = await Crowdloan.createSignature(key, id);
                 // @ts-ignore
                 proofT = this.paraApi.createType("Proof", {
                     leafHash: this.paraApi.createType("Hash",proof.leafHash),
@@ -463,7 +471,7 @@ export default class Crowdloan extends CliBaseCommand {
                 errorSignal = 3;
             } else if (60 <= rnd && rnd < 80) {
                 // Wrong proof
-                signature = await Crowdloan.createSignature(key, id.toU8a());
+                signature = await Crowdloan.createSignature(key, id);
                 let wrongHashes = proof.sortedHashes;
                 wrongHashes[0] = "0xbbbbbbbbbbbbbrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr";
                 // @ts-ignore
@@ -477,7 +485,7 @@ export default class Crowdloan extends CliBaseCommand {
                 errorSignal = 3;
             } else if (80 <= rnd && rnd < 100) {
                 // Wrong account
-                signature = await Crowdloan.createSignature(key, id.toU8a());
+                signature = await Crowdloan.createSignature(key, id);
                 // @ts-ignore
                 proofT = this.paraApi.createType("Proof", {
                     leafHash: this.paraApi.createType("Hash",proof.leafHash),
@@ -548,21 +556,21 @@ export default class Crowdloan extends CliBaseCommand {
         let claims = [];
         // Claim correctly first for all
         for (const [id, [key, amount]] of this.syntheticAccounts) {
-            const proof = await Crowdloan.createProof(tree, id.toHex());
+            const proof = await Crowdloan.createProof(tree, id);
 
-            const signature = await Crowdloan.createSignature(key, id.toHex());
+            const signature = await Crowdloan.createSignature(key, id);
 
             let sigTMultiSig;
             if (key.type == "sr25519") {
-                this.logger.debug("Creating Sr25519 signature. For account " + id.toHex());
+                this.logger.debug("Creating Sr25519 signature. For account " + id);
                 const sigTSr25519 = this.paraApi.createType("Sr25519Signature", '0x' + hexEncode(signature.signature));
                 sigTMultiSig = this.paraApi.createType("MultiSignature", {sr25519: sigTSr25519});
             } else if (key.type == "ed25519") {
-                this.logger.debug("Creating Ed25519 signature. For account " + id.toHex());
+                this.logger.debug("Creating Ed25519 signature. For account " + id);
                 const sigTEd25519 = this.paraApi.createType("Ed25519Signature", '0x' + hexEncode(signature.signature));
                 sigTMultiSig = this.paraApi.createType("MultiSignature", {ed25519: sigTEd25519});
             } else {
-                this.logger.debug("Creating Ecdsa signature. For account " + id.toHex());
+                this.logger.debug("Creating Ecdsa signature. For account " + id);
                 const sigTEcdsa = this.paraApi.createType("EcdsaSignature", '0x' + hexEncode(signature.signature));
                 sigTMultiSig = this.paraApi.createType("MultiSignature", {ecdsa: sigTEcdsa});
             }
@@ -878,24 +886,21 @@ export default class Crowdloan extends CliBaseCommand {
                 counter += 1;
                 let type = Math.floor(Math.random()*100);
                 let keypair;
-                let account;
-                if (0 <= type && type < 40) {
+                if (0 <= type && type < 100) {
                     keypair = keyringSr25519.addFromUri(`TestAccount${counter}`);
-                    account =  this.paraApi.createType("AccountId", keypair.addressRaw);
                 } else if (40 <= type && type < 80) {
                     keypair = keyringEd25519.addFromUri(`TestAccount${counter}`);
-                    account =  this.paraApi.createType("AccountId", keypair.addressRaw);
                 } else {
                     keypair = keyringEcdsa.addFromUri(`TestAccount${counter}`);
-                    account =  this.paraApi.createType("AccountId", keypair.addressRaw);
                 }
+                let account = '0x' + hexEncode(keypair.addressRaw);
 
                 // Fill in storage which we will need to sign stuff later on
                 this.syntheticAccounts.set(account, [keypair, amount]);
 
                 // Transform to an actual contribution
                 // We do NOT calculate referral or any other rewards here. As this is not part of the testing
-                contributors.set(account, this.paraApi.createType("Balance", amount));
+                contributors.set(account, amount);
             }
         }
 
@@ -911,11 +916,11 @@ export default class Crowdloan extends CliBaseCommand {
         let unsortedHashesAndData: Array<[string, Data]> = new Array();
 
         for (const [account, contribution] of contributions){
-            let data = Uint8Array.from(Array.from(account.toU8a()).concat(Array.from(contribution.toU8a())));
+            let data = Uint8Array.from(Array.from(hexDecode(account.slice(2))).concat(Array.from(LeU128Bytes(contribution))));
 
             unsortedHashesAndData.push([
                 blake2AsHex(data, 256),
-                {account: account.toHex(), contribution: contribution.toBigInt()}
+                {account: account, contribution: contribution}
             ]);
         }
 
@@ -1005,32 +1010,58 @@ export default class Crowdloan extends CliBaseCommand {
 
     private async appendContributions(contributions: Map<AccountId, Balance>, filePath: string) {
         try {
-            let file = fs.readFileSync(filePath);
-            let additionals: Array<Contribution> = JSONbig.parse(file.toString());
+            let additionals: Array<Additionals> = [];
+            const file = fs.readFileSync(filePath).toString()
+            const csv = file.split(/\r?\n/);
+            this.logger.debug(csv);
 
-            const check = (value: Contribution) => {
-                if(value.address === undefined) {
-                    return Promise.reject("Invalid additional contributions parsed. Value is: " + value);
+            for (const column of csv) {
+                let rows = column.split(',');
+                this.logger.debug(rows);
+
+                additionals.push({
+                    addressContributed: rows[0].trim(),
+                    addressUsed: rows[1].trim(),
+                    amount: BigInt(rows[2].trim()),
+                })
+            }
+
+            const check = (value: Additionals) => {
+                if(value.addressContributed === undefined) {
+                    throw new Error("Invalid additional contributions parsed. Value is: " + value);
                 }
-                if(value.contribution === undefined ) {
-                    return Promise.reject("Invalid additional contributions parsed. Value is: " + value);
+                if(value.addressUsed === undefined) {
+                    throw new Error("Invalid additional contributions parsed. Value is: " + value);
+                }
+                if(value.amount === undefined || typeof value.amount !== "bigint") {
+                    throw new Error("Invalid additional contributions parsed. Value is: " + value);
                 }
             }
 
             additionals.forEach((contributor) => {
                 check(contributor);
+                this.logger.info("Contributor Extra:" + JSONbig.stringify(contributor))
+                const hexAddressContributed = `0x${hexEncode(decodeAddress(contributor.addressContributed))}`;
+                const hexAddressUsed = `0x${hexEncode(decodeAddress(contributor.addressUsed))}`;
 
-                const accountId = this.paraApi.createType("AccountId", contributor.address);
+                if (contributions.has(hexAddressContributed)) {
+                    const oldAmount = contributions.get(hexAddressContributed);
 
-                if (contributions.has(accountId)) {
-                    const existContribution = contributions.get(accountId);
-                    contributions.set(accountId,
-                        this.paraApi.createType("Balance",
-                            // @ts-ignore - We check that above
-                            existContribution.toBigInt() + contributor.contribution)
-                    );
+                    if (oldAmount !== undefined) {
+                        contributions.set(hexAddressUsed, oldAmount + contributor.amount);
+                        this.logger.info("Adapting contribution from " + hexAddressUsed + " to: " + BigInt(oldAmount + contributor.amount));
+                    } else {
+                        this.logger.warn("Could not fetch contribution amount from existing account " + hexAddressUsed);
+                    }
                 } else {
-                    contributions.set(accountId, this.paraApi.createType("Balance", contributor.contribution));
+                    contributions.set(hexAddressUsed, contributor.amount);
+                    this.logger.info("Setting contribution from " + hexAddressUsed +" manually to: " + contributor.amount);
+                }
+
+                // Remove if addresses do not match
+                if (hexAddressUsed !== hexAddressContributed) {
+                    contributions.delete(hexAddressContributed);
+                    this.logger.info("Removed " + hexAddressContributed + " for " + hexAddressUsed + " from list of contributors");
                 }
             })
         } catch (err) {

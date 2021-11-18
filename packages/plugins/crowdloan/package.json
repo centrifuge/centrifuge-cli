@@ -29,7 +29,8 @@
     "@centrifuge-cli/util": "0.1.0",
     "json-bigint": "^1.0.0",
     "axios": "^0.21.4",
-    "ts-postgres": "^1.1.3"
+    "ts-postgres": "^1.1.3",
+    "csv-parse": "^5.0.1"
   },
   "oclif": {
     "commands": "./dist/commands",

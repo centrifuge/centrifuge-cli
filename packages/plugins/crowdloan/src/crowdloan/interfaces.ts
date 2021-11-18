@@ -1,5 +1,7 @@
-import {AccountId} from "@polkadot/types/interfaces";
 import {Configuration} from "ts-postgres";
+
+export type AccountId = string;
+export type Balance = bigint;
 
 export interface Config {
     // The first one is regarded as the current crowdloan
@@ -57,7 +59,7 @@ export interface Credentials {
 export interface MerkleTree {
     rootHash: string,
     tree: Array<Array<string>>
-    data: Array<{account: string, contribution: bigint}>
+    data: Array<{account: AccountId, contribution: Balance}>
 }
 
 export interface Proof {
@@ -72,6 +74,12 @@ export interface Signature {
 }
 
 export interface Contribution {
-    address: string,
-    contribution: bigint
+    address: AccountId,
+    contribution: Balance
+}
+
+export interface Additionals {
+    addressContributed: AccountId,
+    addressUsed: AccountId,
+    amount: Balance
 }
