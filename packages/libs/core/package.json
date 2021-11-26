@@ -11,7 +11,7 @@
     "url": "https://github.com/centrifuge/centrifuge-cli.git"
   },
   "scripts": {
-    "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
+    "clean": "rimraf dist node_modules tsconfig.tsbuildinfo .nyc_output",
     "prepack": "yarn build",
     "build": "yarn clean && yarn compile",
     "compile": "tsc --build && cp \"./package.json\" ./dist/",
@@ -21,5 +21,8 @@
   "dependencies": {
     "@oclif/command": "^1.8.0",
     "tslog": "^3.2.1"
+  },
+  "devDependencies": {
+    "rimraf": "^3.0.0"
   }
 }

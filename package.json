@@ -1,7 +1,5 @@
 {
-  "name": "root",
   "private": true,
-  "type": "commonjs",
   "workspaces": {
     "packages": [
       "packages/*",
@@ -9,19 +7,24 @@
       "packages/plugins/*"
     ]
   },
+  "engines": {
+    "node": ">=14.0.0"
+  },
   "scripts": {
-    "prepare": "node ./configure-references.js",
+    "clean": "lerna run clean --concurrency 4",
     "build": "lerna run build --stream",
     "lint": "lerna run lint --stream --parallel",
-    "test": "yarn jest --coverage"
+    "test": "lerna run test --concurrency 4"
   },
   "devDependencies": {
-    "eslint": "^7.32.0",
-    "jest": "^27.1.0",
+    "eslint": "^8.3.0",
+    "eslint-config-standard": "16.0.0",
+    "eslint-plugin-import": "^2.25.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^5.1.0",
+    "eslint-plugin-standard": "^5.0.0",
+    "jest": "^27.3.0",
     "lerna": "^4.0.0",
-    "typescript": "^4.4.4"
-  },
-  "dependencies": {
-    "yarn": "^1.22.17"
+    "rimraf": "^3.0.2"
   }
 }

@@ -1,4 +1,6 @@
-.idea/
+*-debug.log
+*-error.log
+.oclif.manifest.json.idea/
 node_modules/
 **/node_modules/
 .node_modules/
@@ -8,3 +10,4 @@ yarn.lock
 yarn-error.log
 tsconfig.tsbuildinfo
 **/tsconfig.tsbuildinfo
+.vscode

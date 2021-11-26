@@ -1,7 +1,7 @@
 centrifuge-cli
 ==============
 
-Centrifuge-cli tool. Allows to interact with different components of the centrifuge infrastructure and provides different tools as plugins.
+Centrifuge-cli tool. Allows to interact with different components of the Centrifuge infrastructure and provides different tools as plugins.
 
 [![oclif](https://img.shields.io/badge/cli-oclif-brightgreen.svg)](https://oclif.io)
 [![Version](https://img.shields.io/npm/v/centrifuge-cli.svg)](https://npmjs.org/package/centrifuge-cli)
