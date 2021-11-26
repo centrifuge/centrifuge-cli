@@ -1020,17 +1020,17 @@ export default class Crowdloan extends CliBaseCommand {
                 this.logger.debug(rows);
 
                 additionals.push({
-                    addressContributed: rows[0].trim(),
-                    addressUsed: rows[1].trim(),
+                    name: rows[0].trim(),
+                    address: rows[1].trim(),
                     amount: BigInt(rows[2].trim()),
                 })
             }
 
             const check = (value: Additionals) => {
-                if(value.addressContributed === undefined) {
+                if(value.name === undefined) {
                     throw new Error("Invalid additional contributions parsed. Value is: " + value);
                 }
-                if(value.addressUsed === undefined) {
+                if(value.address === undefined) {
                     throw new Error("Invalid additional contributions parsed. Value is: " + value);
                 }
                 if(value.amount === undefined || typeof value.amount !== "bigint") {
@@ -1041,27 +1041,20 @@ export default class Crowdloan extends CliBaseCommand {
             additionals.forEach((contributor) => {
                 check(contributor);
                 this.logger.info("Contributor Extra:" + JSONbig.stringify(contributor))
-                const hexAddressContributed = `0x${hexEncode(decodeAddress(contributor.addressContributed))}`;
-                const hexAddressUsed = `0x${hexEncode(decodeAddress(contributor.addressUsed))}`;
+                const hexAddress = `0x${hexEncode(decodeAddress(contributor.address))}`;
 
-                if (contributions.has(hexAddressContributed)) {
-                    const oldAmount = contributions.get(hexAddressContributed);
+                if (contributions.has(hexAddress)) {
+                    const oldAmount = contributions.get(hexAddress);
 
                     if (oldAmount !== undefined) {
-                        contributions.set(hexAddressUsed, oldAmount + contributor.amount);
-                        this.logger.info("Adapting contribution from " + hexAddressUsed + " to: " + BigInt(oldAmount + contributor.amount));
+                        contributions.set(hexAddress, oldAmount + contributor.amount);
+                        this.logger.info("Adapting contribution from " + hexAddress + " to: " + BigInt(oldAmount + contributor.amount));
                     } else {
-                        this.logger.warn("Could not fetch contribution amount from existing account " + hexAddressUsed);
+                        this.logger.warn("Could not fetch contribution amount from existing account " + hexAddress);
                     }
                 } else {
-                    contributions.set(hexAddressUsed, contributor.amount);
-                    this.logger.info("Setting contribution from " + hexAddressUsed +" manually to: " + contributor.amount);
-                }
-
-                // Remove if addresses do not match
-                if (hexAddressUsed !== hexAddressContributed) {
-                    contributions.delete(hexAddressContributed);
-                    this.logger.info("Removed " + hexAddressContributed + " for " + hexAddressUsed + " from list of contributors");
+                    contributions.set(hexAddress, contributor.amount);
+                    this.logger.info("Setting contribution from " + hexAddress +" manually to: " + contributor.amount);
                 }
             })
         } catch (err) {

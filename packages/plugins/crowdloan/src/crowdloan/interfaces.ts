@@ -79,7 +79,7 @@ export interface Contribution {
 }
 
 export interface Additionals {
-    addressContributed: AccountId,
-    addressUsed: AccountId,
+    name: String,
+    address: AccountId,
     amount: Balance
 }
