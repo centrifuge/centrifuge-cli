@@ -11,7 +11,7 @@ import {StorageKey} from "@polkadot/types";
 import {fork} from "../migration/fork";
 import {IConfig} from "@oclif/config";
 import {cryptoWaitReady} from "@polkadot/util-crypto"
-import {CliBaseCommand} from "@centrifuge-cli/core";
+import {CliBaseCommand} from "@centrifuge-cli/core/command";
 import {Config, Credentials, MigrationStats} from "../migration/interfaces";
 import {prepareMigrate, migrate, verifyMigration} from "../migration/migrate";
 

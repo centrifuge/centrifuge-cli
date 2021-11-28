@@ -7,7 +7,7 @@ import {KeyringPair} from "@polkadot/keyring/types";
 import {StorageKey} from "@polkadot/types";
 import {fork} from "../migration/fork";
 import {compactAddLength} from "@polkadot/util"
-import {Dispatcher} from "@centrifuge-cli/dispatcher/dist/dispatcher";
+import {Dispatcher} from "@centrifuge-cli/dispatcher/dispatcher";
 
 export async function verifyMigration(
     toApi: ApiPromise,

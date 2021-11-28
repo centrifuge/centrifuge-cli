@@ -7,10 +7,12 @@ import * as fs from 'fs';
 const packageJson = require('../package.json')
 
 /**
- * Base command for CLI command.
+ * Base Centrifuge CLI command.
  *
- * This generic CLI command class provides basic features to each
+ * This generic CLI command class provides basic features for each
  * command, such as, for instance, logging and configuration.
+ * Ideally, all Centrifuge CLI commands should extend this base
+ * command class.
  */
 export abstract class CliBaseCommand extends BaseCommand {
     private instance: string

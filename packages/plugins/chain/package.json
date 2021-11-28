@@ -1,29 +1,45 @@
 {
   "name": "@centrifuge-cli/plugin-chain",
+  "description": "Centrifuge network management command.",
   "version": "0.1.0",
-  "license": "Apache-2",
   "author": "Centrifuge Foundation <admin@centrifuge.io>",
+  "homepage": "https://github.com/centrifuge/centrifuge-cli#README.md",
+  "bugs": {"url": "https://github.com/centrifuge/centrifuge-cli/issues"},
+  "license": "Apache-2.0",
+  "keywords": [
+    "centrifuge",
+    "centrifuge-cli",
+    "plugin-chain"
+  ],
+  "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "exports": {
+      "./*": "./dist/*"
+  },
+  "typesVersions": {
+      "*": { 
+          "*": ["dist/*"]
+      }
+  },
   "repository": {
     "type": "git",
     "directory": "packages/plugins/chain",
     "url": "https://github.com/centrifuge/centrifuge-cli.git"
   },
+  "engines": {
+    "node": ">=14.17.4"
+  },
   "scripts": {
     "clean": "rimraf dist node_modules tsconfig.tsbuildinfo .nyc_output",
-    "postpack": "rm -f oclif.manifest.json",
+    "compile": "tsc --build && cp \"./package.json\" ./dist/",
+    "build": "yarn clean && yarn compile",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0 --config .eslintrc",
     "pretest": "tsc -p test --noEmit",
-    "posttest": "yarn lint",    
-    "prepack": "yarn build",
-    "build": "yarn clean && yarn compile",
-    "compile": "tsc --build && cp \"./package.json\" ./dist/",
+    "posttest": "yarn lint",
     "test": "nyc --extension .ts mocha --forbid-only \"test/**/*.test.ts\"",
+    "prepack": "yarn build",
+    "postpack": "rm -f oclif.manifest.json",
     "version": "oclif-dev readme && git add README.md"
-  },
-  "engines": {
-    "node": ">=14.0.0"
   },
   "dependencies": {
     "@oclif/command": "^1.8.0",
@@ -57,7 +73,13 @@
     "bin": "centrifuge",
     "plugins": [
       "@oclif/plugin-help"
-    ]
+    ],
+    "topics": {
+        "chain": { 
+            "description": "set of commands used to manage the life-cycle of Centrifuge networks",
+            "hidden": true
+        }
+    }
   },
   "files": [
     "/dist",

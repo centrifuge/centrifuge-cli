@@ -1,30 +1,38 @@
 {
-  "name": "@centrifuge-cli/cli",
-  "description": "A cool terminal CLI to interact with Centrifuge ecosystem",
+  "name": "@centrifuge-cli/plugin-cli",
+  "description": "A command-line terminal interface to interact with Centrifuge components.",
   "version": "0.1.0",
-  "author": "admin@centrifuge.io",
-  "bugs": "https://github.com/centrifuge/centrifuge-cli/issues",
+  "author": "Centrifuge Foundation <info@centrifuge.io>",
+  "homepage": "https://github.com/centrifuge/centrifuge-cli#README.md",
+  "bugs": {"url": "https://github.com/centrifuge/centrifuge-cli/issues"},
+  "license": "Apache-2.0",
+  "keywords": [
+    "centrifuge",
+    "centrifuge-cli-plugin"
+  ],
   "bin": {
     "centrifuge": "./bin/run"
   },
-  "type": "commonjs",
-  "license": "Apache-2",
+  "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "exports": {
+    "./*": "./dist/*"
+  },
+  "typesVersions": {
+    "*": { 
+      "*": ["dist/*"]
+    }
+  },
   "repository": {
     "type": "git",
     "directory": "packages/cli",
     "url": "https://github.com/centrifuge/centrifuge-cli.git"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=14.17.4"
   },
-  "keywords": [
-    "centrifuge",
-    "centrifuge-cli-plugin"
-  ],
   "scripts": {
-    "clean": "rimraf dist node_modules tsconfig.tsbuildinfo .nyc_output",
+    "clean": "rimraf dist node_modules tsconfig.tsbuildinfo .nyc_output *.log",
     "prepack": "yarn build",
     "build": "yarn clean && yarn compile",
     "compile": "tsc --build && cp \"./package.json\" ./dist/",
@@ -49,7 +57,7 @@
     "eslint": "^8.0.0",
     "eslint-config-oclif": "^4.0.0",
     "eslint-config-oclif-typescript": "^1.0.1",
-    "globby": "^12.0.0",
+    "globby": "^10.0.0",
     "ts-node": "^10.4.0",
     "typescript": "~4.4.4"
   },
@@ -70,11 +78,5 @@
     "/bin",
     "/npm-shrinkwrap.json",
     "/yarn.lock"
-  ],
-  "topics": {
-    "chain": {
-      "description": "chain management",
-      "hidden": true
-    }
-  }
+  ]
 }

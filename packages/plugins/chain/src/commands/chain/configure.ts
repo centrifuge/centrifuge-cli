@@ -1,12 +1,12 @@
-import {Command, flags} from '@oclif/command'
-import {CliBaseCommand} from "@centrifuge-cli/core";
+import {flags} from '@oclif/command'
+import {CliBaseCommand} from "@centrifuge-cli/core/command";
 import {IConfig} from "@oclif/config";
 
 
 /**
  * Chain creation command.
  */
-export default class ChainConfigureCommand extends CliBaseCommand {
+export default class Configure extends CliBaseCommand {
     static description = 'Create a new blockchain ecosystem configuration';
     
     static examples = [
@@ -24,11 +24,11 @@ export default class ChainConfigureCommand extends CliBaseCommand {
     static args = [{name: 'file'}]
 
     constructor(argv: string[], config: IConfig) {
-        super("Fork", argv, config);
+        super("Configure", argv, config);
     }
 
     async run() {
-        const {args, flags} = this.parse(ChainConfigureCommand)
+        const {args, flags} = this.parse(Configure)
 
         this.logger.info("First log from tslog")
         this.logger.info("Exiting now...")

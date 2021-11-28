@@ -13,8 +13,8 @@ import {getContributions as getContributionsPolkadot} from "../crowdloan/polkado
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
-import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray, hexDecode, LeU64Bytes} from "@centrifuge-cli/util"
-import {CliBaseCommand} from "@centrifuge-cli/core";
+import {hexEncode, LeU32Bytes, toUtf8ByteArray, fromUtf8ByteArray, hexDecode, LeU64Bytes} from "@centrifuge-cli/util/index"
+import {CliBaseCommand} from "@centrifuge-cli/core/command";
 
 import {
     Config,

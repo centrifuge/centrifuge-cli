@@ -1,20 +1,74 @@
+// {
+//     "compilerOptions": {
+//       "declaration": true,
+//       "forceConsistentCasingInFileNames": true,
+//       "composite": true,
+//       "importHelpers": true,
+//       "esModuleInterop": true,
+//       "resolveJsonModule": true,
+//       "module": "commonjs",
+//       "outDir": "./dist",
+//       "rootDirs": [
+//         "./src"
+//       ],
+//       "strict": true,
+//       "target": "es2017",
+//       "paths": {
+//           "@centrifuge-cli/core/*": [
+//               "../../libs/core/src/*"
+//           ],
+//           "@centrifuge-cli/util/*": [
+//               "../../libs/util/src/*"
+//           ],
+//           "@centrifuge-cli/sp-state-fetch/*": [
+//               "../../libs/sp-state-fetch/src/*"
+//           ],
+//           "@centrifuge-cli/dispatcher/*": [
+//               "../../libs/dispatcher/src/*"
+//           ],
+//           "@centrifuge-cli/plugin-chain/*": [
+//               "../plugins/chain/src/*"
+//           ],
+//           "@centrifuge-cli/plugin-migration/*": [
+//               "../plugins/migration/src/*"
+//           ],
+//           "@centrifuge-cli/cli/*": [
+//               "../plugins/cli/src/*"
+//           ]
+//       }
+//     },
+//     "references": [
+//         {
+//             "path": "../../libs/core"
+//         },
+//         {
+//             "path": "../../libs/dispatcher"
+//         }
+//     ],
+//     "include": [
+//       "src/**/*"
+//     ]
+// }
+
 {
-    "extends": "../../../tsconfig.build.json",
     "compilerOptions": {
-        "composite": true,
-        "rootDir": "./src",
-        "outDir": "./dist",
-        "sourceMap": true,
+        "module": "es2020",
+        "moduleResolution": "node",
+        "target": "es2020",
+        "outDir": "dist",
+        "rootDir": "src",
+        "lib": [
+            "es2020", "dom"
+        ],
+        "declaration": true,
+        "forceConsistentCasingInFileNames": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "importHelpers": true,
+        "resolveJsonModule": true,
+        "strict": true
     },
-    "references": [
-        {
-            "path": "../../libs/core"
-        },
-        {
-            "path": "../../libs/dispatcher"
-        }
-    ],
     "include": [
         "src/**/*"
-    ]
+      ]  
 }

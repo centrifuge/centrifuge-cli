@@ -1,10 +1,25 @@
 {
   "name": "@centrifuge-cli/sp-state-fetch",
   "version": "0.1.0",
-  "type": "commonjs",
-  "license": "Apache-2",
+  "author": "Centrifuge Foundation <admin@centrifuge.io>",
+  "homepage": "https://github.com/centrifuge/centrifuge-cli#README.md",
+  "bugs": {"url": "https://github.com/centrifuge/centrifuge-cli/issues"},
+  "license": "Apache-2.0",
+  "keywords": [
+    "centrifuge",
+    "centrifuge-cli",
+    "lib-sp-state-fetcher"
+  ],
+  "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "exports": {
+    "./*": "./dist/src/*"
+  },
+  "typesVersions": {
+      "*": { 
+          "*": ["dist/src/*"]
+      }
+  },
   "repository": {
     "type": "git",
     "directory": "packages/libs/sp-state-fetch",
@@ -12,16 +27,20 @@
   },
   "scripts": {
     "clean": "rimraf dist node_modules tsconfig.tsbuildinfo .nyc_output",
-    "prepack": "yarn build",
-    "build": "yarn clean && yarn compile",
     "compile": "tsc --build && cp \"./package.json\" ./dist/",
-    "test": "echo 'no test'",
-    "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0"
+    "build": "yarn clean && yarn compile",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0",
+    "pretest": "tsc -p test --noEmit",
+    "posttest": "yarn lint",
+    "test": "nyc --extension .ts mocha --forbid-only \"test/**/*.test.ts\"",
+    "prepack": "yarn build",
+    "postpack": "rm -f oclif.manifest.json",
+    "version": "oclif-dev readme && git add README.md"    
   },
   "dependencies": {
     "@polkadot/api": "^6.5.2",
-    "@centrifuge-cli/core": "0.1.0",
-    "@centrifuge-cli/util": "0.1.0"
+    "@centrifuge-cli/core": "^0.1.0",
+    "@centrifuge-cli/util": "^0.1.0"
   },
   "devDependencies": {
     "rimraf": "^3.0.0"

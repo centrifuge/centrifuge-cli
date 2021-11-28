@@ -1,5 +1,5 @@
 import {Command, flags} from '@oclif/command'
-import {CliBaseCommand} from "@centrifuge-cli/core";
+import {CliBaseCommand} from "@centrifuge-cli/core/command";
 import {IConfig} from "@oclif/config";
 
 
@@ -12,7 +12,7 @@ import {IConfig} from "@oclif/config";
  * for partners or community to be able to easily launch a testing chain.
  * A setup wizzard is proposed if no arguments are passed to the command.
  */
-export default class ChainSetupCommand extends CliBaseCommand {
+export default class Setup extends CliBaseCommand {
     static description = 'setup blockchain management tool';
 
     static examples = [
@@ -32,11 +32,11 @@ export default class ChainSetupCommand extends CliBaseCommand {
     ]
 
     constructor(argv: string[], config: IConfig) {
-        super("Fork", argv, config);
+        super("Setup", argv, config);
     }
 
     async run() {
-        const {args, flags} = this.parse(ChainSetupCommand)
+        const {args, flags} = this.parse(Setup)
 
         this.logger.info("First log from tslog")
         this.logger.info("Exiting now...")
