@@ -1,3 +1,3 @@
-import {CliBaseCommand} from "./command";
+import { CliBaseCommand } from './command';
 
-export {CliBaseCommand};
+export { CliBaseCommand };

@@ -1,38 +1,35 @@
-import {flags} from '@oclif/command'
-import {CliBaseCommand} from "@centrifuge-cli/core/command";
-import {IConfig} from "@oclif/config";
-
+import { flags } from '@oclif/command'
+import { CliBaseCommand } from '@centrifuge-cli/core/command'
+import { IConfig } from '@oclif/config'
 
 /**
  * Chain creation command.
  */
 export default class Configure extends CliBaseCommand {
-    static description = 'Create a new blockchain ecosystem configuration';
-    
-    static examples = [
-        `$ centrifuge chain:configure`,
-    ]
+  static description = 'Create a new blockchain ecosystem configuration'
 
-    static flags = {
-        help: flags.help({char: 'h'}),
-        // flag with a value (-n, --name=VALUE)
-        name: flags.string({char: 'n', description: 'name to print'}),
-        // flag with no value (-f, --force)
-        force: flags.boolean({char: 'f'}),
-    }
+  static examples = [`$ centrifuge chain:configure`]
 
-    static args = [{name: 'file'}]
+  static flags = {
+    help: flags.help({ char: 'h' }),
+    // flag with a value (-n, --name=VALUE)
+    name: flags.string({ char: 'n', description: 'name to print' }),
+    // flag with no value (-f, --force)
+    force: flags.boolean({ char: 'f' }),
+  }
 
-    constructor(argv: string[], config: IConfig) {
-        super("Configure", argv, config);
-    }
+  static args = [{ name: 'file' }]
 
-    async run() {
-        const {args, flags} = this.parse(Configure)
+  constructor(argv: string[], config: IConfig) {
+    super('Configure', argv, config)
+  }
 
-        this.logger.info("First log from tslog")
-        this.logger.info("Exiting now...")
+  async run() {
+    const { args, flags } = this.parse(Configure)
 
-        this.exit(2);
-    }
+    this.logger.info('First log from tslog')
+    this.logger.info('Exiting now...')
+
+    this.exit(2)
+  }
 }

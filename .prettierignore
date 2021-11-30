@@ -1,0 +1,14 @@
+**/tests/fixtures/**/*
+**/tests/fixture-project/**/*
+**/dist
+**/coverage
+**/shared-fixtures
+**/.vscode
+**/.nyc_output
+**/.vs
+.github
+.all-contributorsrc
+CONTRIBUTORS.md
+
+# Ignore CHANGELOG.md files to avoid issues with automated release job
+CHANGELOG.md

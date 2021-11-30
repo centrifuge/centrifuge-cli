@@ -1,22 +1,16 @@
 {
+    "extends": "../../../tsconfig.json",
+  
     "compilerOptions": {
-        "module": "es2020",
-        "moduleResolution": "node",
-        "target": "es2020",
-        "outDir": "dist",
-        "rootDir": "src",
-        "lib": [
-            "es2020", "dom"
-        ],
-        "declaration": true,
-        "forceConsistentCasingInFileNames": true,
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
-        "importHelpers": true,
-        "resolveJsonModule": true,
-        "strict": true
+        "outDir": "./dist"
     },
+
     "include": [
         "src/**/*"
-      ]  
+    ],
+    
+    "exclude": [
+        "node_modules", 
+        "dist"
+    ]
 }

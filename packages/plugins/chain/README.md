@@ -1,6 +1,7 @@
 # Centrifuge Chain Management Commands Plugin
 
 ## Introduction
+
 This [`centrifuge-cli`]() plugin provides essential commands for managing a local or remote Centrifuge Chain ecosystem, running on a local host or on a cloud-based platform (using Kubernetes, for instance). For instance, a blockchain ecosystem made up of Polkadot relay chain, on which one or more parachains are registered, can easily be boostraped from a terminal, for development or testing purpose.
 
 ## Available Commands

@@ -32,13 +32,19 @@
     "node": ">=14.17.4"
   },
   "scripts": {
-    "clean": "rimraf dist node_modules tsconfig.tsbuildinfo .nyc_output *.log",
-    "prepack": "yarn build",
+    "clean": "rimraf dist node_modules .nyc_output",
+    "compile": "tsc --build && cp ./package.json ./dist/",
     "build": "yarn clean && yarn compile",
-    "compile": "tsc --build && cp \"./package.json\" ./dist/",
-    "test": "echo 'no test'",
-    "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0"
+    "lint": "eslint src/**/*.ts --max-warnings=0 --config .eslintrc.json --ignore-path .eslintignore",
+    "lint:fix": "eslint --fix src/**/*.ts",
+    "pretest": "tsc -p test --noEmit",
+    "posttest": "yarn lint",
+    "test": "nyc --extension .ts mocha --forbid-only \"test/**/*.test.ts\"",
+    "prepack": "yarn build",
+    "postpack": "rm -f oclif.manifest.json",
+    "version": "oclif-dev readme && git add README.md"
   },
+ 
   "dependencies": {
     "@heroku-cli/color": "^1.1.0",
     "@oclif/command": "^1.8.0",
@@ -49,20 +55,20 @@
     "@centrifuge-cli/plugin-chain": "0.1.0",
     "@centrifuge-cli/plugin-migration": "0.1.0",
     "@centrifuge-cli/plugin-crowdloan": "0.1.0",
-    "tslib": "^2"
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
     "@oclif/dev-cli": "^1.26.0",
-    "@types/node": "^16.0.0",
-    "eslint": "^8.0.0",
+    "@types/node": "^16.11.0",
+    "eslint": "^8.3.0",
     "eslint-config-oclif": "^4.0.0",
-    "eslint-config-oclif-typescript": "^1.0.1",
+    "eslint-config-oclif-typescript": "^1.0.0",
     "globby": "^10.0.0",
     "ts-node": "^10.4.0",
     "typescript": "~4.4.4"
   },
   "oclif": {
-    "bin": "centrifuge",
+    "bin": "centrifuge-cli",
     "plugins": [
       "@oclif/plugin-help",
       "@oclif/plugin-commands",

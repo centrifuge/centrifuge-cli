@@ -1,38 +1,33 @@
 {
-    "compilerOptions": {
-        "compilerOptions": {
-            "baseUrl": "./packages",
-            "paths": {
-                "@centrifuge-cli/core/*": [
-                    "libs/core/src/*"
-                ],
-                "@centrifuge-cli/util/*": [
-                    "libs/util/src/*"
-                ],
-                "@centrifuge-cli/sp-state-fetch/*": [
-                    "libs/sp-state-fetch/src/*"
-                ],
-                "@centrifuge-cli/dispatcher/*": [
-                    "libs/dispatcher/src/*"
-                ],
-                "@centrifuge-cli/plugin-chain/*": [
-                    "plugins/chain/src/*"
-                ],
-    },
-    
-    "files": [],
-
-    "references": [
-        // Libraries
-        { "path": "./packages/libs/core/tsconfig.ref.json" },
-        { "path": "./packages/libs/dispatcher/tsconfig.ref.json" },
-        { "path": "./packages/libs/sp-state-fetch/tsconfig.ref.json" },
-        { "path": "./packages/libs/util/tsconfig.ref.json" },
-
-        // Plugins or commands
-        { "path": "./packages/plugins/chain/tsconfig.ref.json" },
-        { "path": "./packages/plugins/cli/tsconfig.ref.json" },
-        { "path": "./packages/plugins/crowdloan/tsconfig.ref.json" },
-        { "path": "./packages/plugins/migration/tsconfig.ref.json" }
-    ]
+  "extends": "./tsconfig.base.json",
+  
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@centrifuge-cli/core/*": [
+          "packages/libs/core/src/*"
+      ],
+      "@centrifuge-cli/dispatcher/*": [
+          "packages/libs/dispatcher/src/*"
+      ],
+      "@centrifuge-cli/sp-state-fetch/*": [
+          "packages/libs/sp-state-fetch/src/*"
+      ],
+      "@centrifuge-cli/util/*": [
+          "packages/libs/util/src/*"
+      ],
+      "@centrifuge-cli/chain/*": [
+          "packages/plugins/chain/src/*"
+      ],
+      "@centrifuge-cli/cli/*": [
+          "packages/plugins/cli/src/*"
+      ],
+      "@centrifuge-cli/crowdloan/*": [
+          "packages/plugins/crowdloan/src/*"
+      ],
+      "@centrifuge-cli/migration/*": [
+          "packages/plugins/migration/src/*"
+      ]
+    }
+  },
 }

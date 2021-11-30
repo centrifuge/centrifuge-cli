@@ -26,10 +26,11 @@
     "url": "https://github.com/centrifuge/centrifuge-cli.git"
   },
   "scripts": {
-    "clean": "rimraf dist node_modules tsconfig.tsbuildinfo .nyc_output",
-    "compile": "tsc --build && cp \"./package.json\" ./dist/",
+    "clean": "rimraf dist node_modules .nyc_output",
+    "compile": "tsc --build && cp ./package.json ./dist/",
     "build": "yarn clean && yarn compile",
-    "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0",
+    "lint": "eslint src/**/*.ts --max-warnings=0 --config .eslintrc.json --ignore-path .eslintignore",
+    "lint:fix": "eslint --fix src/**/*.ts",
     "pretest": "tsc -p test --noEmit",
     "posttest": "yarn lint",
     "test": "nyc --extension .ts mocha --forbid-only \"test/**/*.test.ts\"",

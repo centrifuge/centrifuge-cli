@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "module": "es2020",
+    "moduleResolution": "node",
+    "target": "es2020",
+    "lib": [ "es2020", "dom" ],
+    "declaration": true,
+    "sourceMap": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "importHelpers": true,
+    "resolveJsonModule": true,
+    "noImplicitThis": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "alwaysStrict": true,
+    "skipLibCheck": true
+  }
+}

@@ -1,10 +1,16 @@
 {
   "name": "centrifuge-cli",
   "description": "CLI allowing to manage Centrifuge components (i.e. network, dapps, ...).",
+  "version": "0.1.0",
   "author": "Centrifuge Foundation <admin@centrifuge.io>",
   "homepage": "https://github.com/centrifuge/centrifuge-cli#README.md",
   "bugs": {"url": "https://github.com/centrifuge/centrifuge-cli/issues"},
   "license": "Apache-2.0",
+  "keywords": [
+    "centrifuge",
+    "centrifuge-cli"
+  ],
+  "type": "module",
   "private": true,
   "workspaces": [
     "packages/libs/*",
@@ -14,14 +20,42 @@
     "node": ">=14.17.4"
   },
   "scripts": {
-    "clean": "lerna run clean --concurrency 4 && rimraf *.log node_modules",
+    "clean": "lerna run clean --concurrency 4 && rimraf *.log node_modules yarn.lock",
     "build": "lerna run build --stream",
     "lint": "lerna run lint --stream --parallel",
-    "test": "lerna run test --concurrency 4"
+    "lint:markdown": "markdownlint '**/*.md' --config=.markdownlint.json --ignore-path=.markdownlintignore",
+    "test": "lerna run test --concurrency 4",
+    "release": "lerna version",
+    "prerelease": "lerna version prerelease --preid next"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^5.4.0",
+    "@typescript-eslint/eslint-plugin": "^5.4.0",
+    "@types/prettier": "^2.4.0",
+    "@types/rimraf": "^3.0.0",
+    "eslint": "^8.3.0",
+    "eslint-plugin-prettier": "^4.0.0",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-config-standard-with-typescript": "^21.0.1",
+    "husky": "^7.0.0",
     "jest": "^27.3.0",
     "lerna": "^4.0.0",
+    "lint-staged": "^12.1.0",
+    "markdownlint-cli": "^0.30.0",
+    "prettier": "^2.5.0",
     "rimraf": "^3.0.2"
+  },
+  "files": [
+    "README.md"
+  ],
+  "husky": {
+    "hooks": {
+        "pre-commit": "tsc --noEmit && lint-staged"
+    }
+  },
+  "lint-staged": {
+    "{src,test}/**/*.ts": [
+      "eslint --fix"
+    ]
   }
 }

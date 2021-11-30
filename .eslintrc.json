@@ -1,0 +1,24 @@
+{   
+    "root": true,
+    "env": {
+        "es2020": true,
+        "node": true
+    },
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+        "ecmaVersion": 2020, 
+        "sourceType": "module",
+        "tsconfigRootDir": ".",
+        "project": [ "tsconfig.json" ]
+    },
+    "plugins": [
+      "@typescript-eslint"
+    ],
+    "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended",
+        "plugin:@typescript-eslint/recommended-requiring-type-checking",
+        "plugin:prettier/recommended"
+    ],
+    "ignorePatterns": ["dist", "node_modules", "examples", "scripts"]
+}

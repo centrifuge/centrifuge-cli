@@ -1,3 +1,6 @@
 node_modules
-packages/*/dist
+packages/libs/*/dist
 packages/plugins/*/dist
+coverage
+dist
+jest.*.js
