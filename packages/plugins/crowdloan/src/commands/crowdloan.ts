@@ -1041,7 +1041,13 @@ export default class Crowdloan extends CliBaseCommand {
             additionals.forEach((contributor) => {
                 check(contributor);
                 this.logger.info("Contributor Extra:" + JSONbig.stringify(contributor))
-                const hexAddress = `0x${hexEncode(decodeAddress(contributor.address))}`;
+                let hexAddress;
+                try {
+                     hexAddress = `0x${hexEncode(decodeAddress(contributor.address))}`;
+                } catch (err) {
+                    this.logger.error(`Could not decode address. Contribution of ${contributor.name}  not appended. \n ${err}`);
+                    return;
+                }
 
                 if (contributions.has(hexAddress)) {
                     const oldAmount = contributions.get(hexAddress);
