@@ -1,6 +1,5 @@
 import {ApiPromise} from "@polkadot/api";
-import {CrowdloanSpec, KusamaTransformConfig, TransformConfig} from "./interfaces";
-import {AccountId, Balance} from "@polkadot/types/interfaces";
+import {CrowdloanSpec, KusamaTransformConfig, AccountId, Balance} from "./interfaces";
 import Crowdloan from "../commands/crowdloan";
 import {Logger as TsLogger} from 'tslog';
 import {BigNumber} from 'bignumber.js'
@@ -31,8 +30,8 @@ export async function getContributions(
     return await transformIntoRewardee(paraApi, config, contributors, sqlConfig, logger);
 }
 
-async function fetchFromWebService(): Promise<Map<string, Array<Contributor>>> {
-    let contributions: Map<string, Array<Contributor>> = new Map();
+async function fetchFromWebService(): Promise<Map<AccountId, Array<Contributor>>> {
+    let contributions: Map<AccountId, Array<Contributor>> = new Map();
 
     try {
       let response = await axios.get('https://crowdloan-ws.centrifuge.io/contributions');
@@ -134,10 +133,8 @@ async function transformIntoRewardee(
     let typedRewardees = new Map();
     // Need to create AccountId types here
     for(const [account, reward] of rewardees) {
-        const tAccount = api.createType("AccountId", account);
-        const tReward = api.createType("Balance", reward);
-        typedRewardees.set(tAccount, tReward);
-        logger.debug(`Finalizing rewards for account ${encodeAddress(account, 2)} (hex: ${account}) with reward of ${tReward.toHuman()}`)
+        typedRewardees.set(account, reward);
+        logger.debug(`Finalizing rewards for account ${encodeAddress(account, 2)} (hex: ${account}) with reward of ${reward}`)
     }
 
     return typedRewardees;
