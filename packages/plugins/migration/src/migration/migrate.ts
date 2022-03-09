@@ -522,8 +522,6 @@ export async function migrate(
         }
     }
 
-    return Promise.reject("TESTING");
-
     for (const dispatchable of dispatchables) {
         await dispatcher.sudoDispatch(dispatchable);
     }
