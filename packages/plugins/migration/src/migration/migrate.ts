@@ -60,6 +60,21 @@ export async function verifyMigration(
                 if(failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
+            } else if (key === xxhashAsHex("Claims", 128) + xxhashAsHex("ClaimedAmounts", 128).slice(2)){
+                let failed = await verifyClaimsClaimedAmounts(oldData, fromApi, newData, toApi);
+                if(failed.length !== 0) {
+                    failedVerification.push(...failed);
+                }
+            } else if (key === xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2)){
+                let failed = await verifyClaimsRootHashes(oldData, fromApi, newData, toApi);
+                if(failed.length !== 0) {
+                    failedVerification.push(...failed);
+                }
+            } else if (key === xxhashAsHex("Claims", 128) + xxhashAsHex("UpdateAccount", 128).slice(2)){
+                let failed = await verifyClaimsUpdateAccount(oldData, fromApi, newData, toApi);
+                if(failed.length !== 0) {
+                    failedVerification.push(...failed);
+                }
             } else {
                 failedVerification.push(...oldData);
                 console.log("Some data from old could not be verified here...");
@@ -68,6 +83,128 @@ export async function verifyMigration(
     }
 
     return failedVerification;
+}
+
+async function verifyClaimsClaimedAmounts(
+    oldData: Array<[StorageKey, Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey, Uint8Array]>,
+    newApi: ApiPromise
+): Promise<Array<[StorageKey, Uint8Array]>> {
+    let failed = new Array();
+
+    let newDataMap = newData.reduce(function (map, obj) {
+        map.set(obj[0].toHex(), obj[1]);
+        return map;
+    }, new Map<string, Uint8Array>());
+
+    let checked = 0;
+    for(let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+
+        let newScale = newDataMap.get(key.toHex());
+        if (newScale !== undefined) {
+            let newClaimed = newApi.createType('Balance', newScale);
+            let oldClaimed = oldApi.createType('Balance', value);
+
+            let account = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+            if (newClaimed.toBigInt() !== oldClaimed.toBigInt()) {
+                console.log(
+                    "ERROR Claims.ClaimedAmount: Missmatch for account" + account.toHex() + "\n",
+                    "Old: " + oldClaimed.toBigInt() + " vs. \n",
+                    "New: " + newClaimed.toBigInt()
+                )
+                failed.push([key, value]);
+            }
+        } else {
+            console.log("ERROR Claims.ClaimedAmounts: New claimed amount for key " + key.toHex() + " not found...");
+            failed.push([key, value]);
+        }
+
+        checked += 1;
+    }
+
+    return failed;
+}
+
+async function verifyClaimsRootHashes(
+    oldData: Array<[StorageKey, Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey, Uint8Array]>,
+    newApi: ApiPromise
+): Promise<Array<[StorageKey, Uint8Array]>> {
+    let failed = new Array();
+
+    let newDataMap = newData.reduce(function (map, obj) {
+        map.set(obj[0].toHex(), obj[1]);
+        return map;
+    }, new Map<string, Uint8Array>());
+
+    let checked = 0;
+    for(let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+
+        let newScale = newDataMap.get(key.toHex());
+        if (newScale !== undefined) {
+            if (newScale !== value) {
+                console.log(
+                    "ERROR Claims.RootHashes: Missmatch in boolean \n",
+                    "Old: " + newScale + " vs. \n",
+                    "New: " + value
+                )
+                failed.push([key, value]);
+            }
+        } else {
+            console.log("ERROR Claims.RootHashes: New root hash for old key of " + key.toHex() +" not found...");
+            failed.push([key, value]);
+        }
+
+        checked += 1;
+    }
+
+    return failed;
+}
+
+async function verifyClaimsUpdateAccount(
+    oldData: Array<[StorageKey, Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey, Uint8Array]>,
+    newApi: ApiPromise
+): Promise<Array<[StorageKey, Uint8Array]>> {
+    let failed = new Array();
+
+    let newDataMap = newData.reduce(function (map, obj) {
+        map.set(obj[0].toHex(), obj[1]);
+        return map;
+    }, new Map<string, Uint8Array>());
+
+    let checked = 0;
+    for(let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+
+        let oldAccount = oldApi.createType('AccountId', value);
+
+        let newScale = newDataMap.get(key.toHex());
+        if (newScale !== undefined) {
+            let newAccount = newApi.createType('AccountId', newScale);
+
+            if (oldAccount.toHex() !== newAccount.toHex()) {
+                console.log(
+                    "ERROR Claims.UpdateAccount: Missmatch \n",
+                    "Old: " + oldAccount.toHex() + " vs. \n",
+                    "New: " + newAccount.toHex()
+                )
+                failed.push([key, value]);
+            }
+        } else {
+            console.log("ERROR CLAIMS_UPDATE_ACCOUNT: New update account not found...");
+            failed.push([key, value]);
+        }
+
+        checked += 1;
+    }
+
+    return failed;
 }
 
 async function verifySystemAccount(
