@@ -2,7 +2,21 @@ import {xxhashAsHex} from "@polkadot/util-crypto";
 import {StorageKey} from "@polkadot/types";
 
 
-export async function insertOrNewMap(map: Map<string, Array<any>>, key: string, item: any) {
+
+export function getOrInsertMap(map: Map<string, Map<string, Array<any>>>, key: string): Map<string, Array<any>> {
+    if (map.has(key)) {
+        // We have checked that it exists
+        // @ts-ignore
+        return map.get(key)
+    } else {
+        map.set(key, new Map())
+        // We have checked that it exists
+        // @ts-ignore
+        return map.get(key)
+    }
+}
+
+export async function insertOrNewArray(map: Map<string, Array<any>>, key: string, item: any) {
     if (map.has(key)) {
         let itemsArray = map.get(key);
         // @ts-ignore // We check that above
