@@ -38,12 +38,54 @@ export async function transform(
             let migratedPalletStorageItems = await transformProxy(fromApi, toApi, keyValues);
             state.set(palletKey, migratedPalletStorageItems)
 
-        }  else {
+        } else if (key.startsWith(xxhashAsHex("Claims", 128))) {
+            let palletKey = xxhashAsHex("Claims", 128);
+            let migratedPalletStorageItems = await transformClaims(fromApi, toApi, keyValues);
+            state.set(palletKey, migratedPalletStorageItems)
+        } else {
             return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + key);
         }
     }
 
     return state;
+}
+
+async function transformClaims (fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>):  Promise<Map<string, Array<StorageItem>>> {
+    let state: Map<string, Array<StorageItem>> = new Map();
+
+    for(let [patriciaKey, value] of keyValues) {
+        if (patriciaKey.toHex().startsWith(xxhashAsHex("Claims", 128) + xxhashAsHex("ClaimedAmounts", 128).slice(2))) {
+            let pkStorageItem = xxhashAsHex("Claims", 128) + xxhashAsHex("ClaimedAmounts", 128).slice(2);
+            await insertOrNewMap(state, pkStorageItem, await transformClaimsClaimedAmounts(fromApi, toApi, patriciaKey, value));
+
+        } else if (patriciaKey.toHex().startsWith(xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2))) {
+            let pkStorageItem = xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2);
+            await insertOrNewMap(state, pkStorageItem, await transformClaimsRootHashes(fromApi, toApi, patriciaKey, value));
+
+        } else if (patriciaKey.toHex().startsWith(xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2))) {
+            let pkStorageItem = xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2);
+            await insertOrNewMap(state, pkStorageItem, await transformClaimsUploadAccount(fromApi, toApi, patriciaKey, value));
+
+        } else {
+            return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + patriciaKey.toHuman());
+        }
+    }
+
+    return state;
+}
+
+async function transformClaimsClaimedAmounts(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleClaimedAmountsUser:  Uint8Array): Promise<StorageItem> {
+    return new StorageMapValue(scaleClaimedAmountsUser, completeKey);
+
+}
+
+async function transformClaimsRootHashes(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleRootHashBool:  Uint8Array): Promise<StorageItem> {
+    return new StorageMapValue(scaleRootHashBool, completeKey);
+
+}
+
+async function transformClaimsUploadAccount(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleUploadAccount:  Uint8Array): Promise<StorageItem> {
+    return new StorageValueValue(scaleUploadAccount);
 }
 
 async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>):  Promise<Map<string, Array<StorageItem>>> {
