@@ -78,8 +78,8 @@ export async function verifyMigration(
                 if(failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
-            } else if (key === xxhashAsHex("Claims", 128) + xxhashAsHex("UpdateAccount", 128).slice(2)){
-                let failed = await verifyClaimsUpdateAccount(oldData, fromApi, newData, toApi);
+            } else if (key === xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2)){
+                let failed = await verifyClaimsUploadAccount(oldData, fromApi, newData, toApi);
                 if(failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
@@ -118,7 +118,7 @@ async function verifyClaimsClaimedAmounts(
             let account = newApi.createType("AccountId", key.toU8a(true).slice(-32));
             if (newClaimed.toBigInt() !== oldClaimed.toBigInt()) {
                 console.log(
-                    "ERROR Claims.ClaimedAmount: Missmatch for account" + account.toHex() + "\n",
+                    "ERROR Claims.ClaimedAmounts: Missmatch for account" + account.toHex() + "\n",
                     "Old: " + oldClaimed.toBigInt() + " vs. \n",
                     "New: " + newClaimed.toBigInt()
                 )
@@ -173,7 +173,7 @@ async function verifyClaimsRootHashes(
     return failed;
 }
 
-async function verifyClaimsUpdateAccount(
+async function verifyClaimsUploadAccount(
     oldData: Array<[StorageKey, Uint8Array]>,
     oldApi: ApiPromise,
     newData: Array<[StorageKey, Uint8Array]>,
@@ -198,14 +198,14 @@ async function verifyClaimsUpdateAccount(
 
             if (oldAccount.toHex() !== newAccount.toHex()) {
                 console.log(
-                    "ERROR Claims.UpdateAccount: Missmatch \n",
+                    "ERROR Claims.UploadAccount: Missmatch \n",
                     "Old: " + oldAccount.toHex() + " vs. \n",
                     "New: " + newAccount.toHex()
                 )
                 failed.push([key, value]);
             }
         } else {
-            console.log("ERROR CLAIMS_UPDATE_ACCOUNT: New update account not found...");
+            console.log("ERROR Claims.UploadAccount: New update account not found...");
             failed.push([key, value]);
         }
 
