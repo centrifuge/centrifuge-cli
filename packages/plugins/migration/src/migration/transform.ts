@@ -20,29 +20,29 @@ export async function transform(
         // Match all prefixes we want to transform
         if (key.startsWith(xxhashAsHex("System",128))) {
              let palletKey = xxhashAsHex("System", 128);
-             let migratedPalletStorageItems = await transformSystem(fromApi, toApi, keyValues);
-             state.set(palletKey, migratedPalletStorageItems)
+             let palletItems = getOrInsertMap(state, palletKey);
+             await transformSystem(fromApi, toApi, palletItems, keyValues);
 
         } else if (key.startsWith(xxhashAsHex("Balances", 128))) {
             let palletKey = xxhashAsHex("Balances", 128);
-            let migratedPalletStorageItems = await transformBalances(fromApi, toApi, keyValues);
-            state.set(palletKey, migratedPalletStorageItems)
+            let palletItems = getOrInsertMap(state, palletKey);
+            await transformBalances(fromApi, toApi, palletItems, keyValues);
 
         } else if (key.startsWith(xxhashAsHex("Vesting", 128))) {
             let palletKey = xxhashAsHex("Vesting", 128);
-            let migratedPalletStorageItems = await transformVesting(fromApi, toApi, keyValues, startFrom, atTo);
-            state.set(palletKey, migratedPalletStorageItems)
+            let palletItems = getOrInsertMap(state, palletKey);
+            await transformVesting(fromApi, toApi, palletItems, keyValues, startFrom, atTo);
 
         } else if (key.startsWith(xxhashAsHex("Proxy", 128))) {
             let palletKey = xxhashAsHex("Proxy", 128);
-            let migratedPalletStorageItems = await transformProxy(fromApi, toApi, keyValues);
-            state.set(palletKey, migratedPalletStorageItems)
+            let palletItems = getOrInsertMap(state, palletKey);
+            await transformProxy(fromApi, toApi, palletItems, keyValues);
 
         } else if (key.startsWith(xxhashAsHex("RadClaims", 128))) {
             let palletKey = xxhashAsHex("Claims", 128);
-
             let palletItems = getOrInsertMap(state, palletKey);
             await transformClaims(fromApi, toApi, palletItems, keyValues);
+
         } else {
             return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + key);
         }
@@ -97,8 +97,12 @@ async function transformClaimsUploadAccount(fromApi: ApiPromise, toApi: ApiPromi
     return new StorageValueValue(scaleUploadAccount);
 }
 
-async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>):  Promise<Map<string, Array<StorageItem>>> {
-    let state: Map<string, Array<StorageItem>> = new Map();
+async function transformProxy(
+    fromApi: ApiPromise,
+    toApi: ApiPromise,
+    state: Map<string, Array<StorageItem>>,
+    keyValues: Array<[StorageKey, Uint8Array]>
+) {
 
     // Match against the actual storage items of a pallet.
     for(let [patriciaKey, value] of keyValues) {
@@ -109,8 +113,6 @@ async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues:
             return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + patriciaKey.toHuman());
         }
     }
-
-    return state;
 }
 
 async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldProxies:  Uint8Array): Promise<StorageItem> {
@@ -185,9 +187,12 @@ async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, com
 }
 
 
-async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array ]>):  Promise<Map<string, Array<StorageItem>>> {
-    let state: Map<string, Array<StorageItem>> = new Map();
-
+async function transformSystem(
+    fromApi: ApiPromise,
+    toApi: ApiPromise,
+    state: Map<string, Array<StorageItem>>,
+    keyValues: Array<[StorageKey, Uint8Array ]>
+) {
     // Match against the actual storage items of a pallet.
     for(let [patriciaKey, value] of keyValues) {
         let systemAccount = xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2);
@@ -198,8 +203,6 @@ async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues
             return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + patriciaKey.toHuman());
         }
     }
-
-    return state;
 }
 
 async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldAccountInfo:  Uint8Array): Promise<StorageItem> {
@@ -226,9 +229,12 @@ async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, co
     return new StorageMapValue(newAccountInfo.toU8a(true), completeKey);
 }
 
-async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey,  Uint8Array]>):  Promise<Map<string, Array<StorageItem>>>{
-    let state: Map<string, Array<StorageItem>> = new Map();
-
+async function transformBalances(
+    fromApi: ApiPromise,
+    toApi: ApiPromise,
+    state: Map<string, Array<StorageItem>>,
+    keyValues: Array<[StorageKey,  Uint8Array]>
+) {
     for(let [patriciaKey, value] of keyValues) {
         if (patriciaKey.toHex().startsWith(xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2);
@@ -237,8 +243,6 @@ async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValu
             return Promise.reject("Fetched data that can not be transformed. Part of Balances. PatriciaKey is: " + patriciaKey.toHex());
         }
     }
-
-    return state;
 }
 
 async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldTotalIssuance:  Uint8Array): Promise<StorageItem> {
@@ -252,8 +256,14 @@ async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPro
     return new StorageValueValue(newIssuance.toU8a(true));
 }
 
-async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey,  Uint8Array]>, atFrom: Hash, atTo: Hash):  Promise<Map<string, Array<StorageItem>>> {
-    let state: Map<string, Array<StorageItem>> = new Map();
+async function transformVesting(
+    fromApi: ApiPromise,
+    toApi: ApiPromise,
+    state: Map<string, Array<StorageItem>>,
+    keyValues: Array<[StorageKey,  Uint8Array]>,
+    atFrom: Hash,
+    atTo: Hash
+) {
     const atToAsNumber = (await toApi.rpc.chain.getBlock(atTo)).block.header.number.toBigInt();
     const atFromAsNumber =  (await fromApi.rpc.chain.getBlock(atFrom)).block.header.number.toBigInt();
 
@@ -267,8 +277,6 @@ async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValue
             return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + patriciaKey.toHuman());
         }
     }
-
-    return state;
 }
 
 async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldVestingInfo:  Uint8Array, atFrom: bigint, atTo: bigint): Promise<StorageItem> {
