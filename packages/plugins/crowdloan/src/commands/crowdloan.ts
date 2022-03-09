@@ -1046,7 +1046,7 @@ export default class Crowdloan extends CliBaseCommand {
 
             additionals.forEach((contributor) => {
                 check(contributor);
-                this.logger.info("Contributor Extra:" + JSONbig.stringify(contributor))
+                this.logger.debug("Contributor Extra:" + JSONbig.stringify(contributor))
                 let hexAddress;
                 try {
                      hexAddress = `0x${hexEncode(decodeAddress(contributor.address))}`;
@@ -1060,13 +1060,13 @@ export default class Crowdloan extends CliBaseCommand {
 
                     if (oldAmount !== undefined) {
                         contributions.set(hexAddress, oldAmount + contributor.amount);
-                        this.logger.info("Adapting contribution from " + hexAddress + " to: " + BigInt(oldAmount + contributor.amount));
+                        this.logger.debug("Adapting contribution from " + hexAddress + " to: " + BigInt(oldAmount + contributor.amount));
                     } else {
                         this.logger.warn("Could not fetch contribution amount from existing account " + hexAddress);
                     }
                 } else {
                     contributions.set(hexAddress, contributor.amount);
-                    this.logger.info("Setting contribution from " + hexAddress +" manually to: " + contributor.amount);
+                    this.logger.debug("Setting contribution from " + hexAddress +" manually to: " + contributor.amount);
                 }
             })
         } catch (err) {
