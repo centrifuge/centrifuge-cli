@@ -39,7 +39,12 @@ export interface TransformConfig {
 }
 
 export interface PolkadotTransformConfig {
-
+    decimalDifference: bigint,
+    conversionRate: bigint,
+    earlyBirdPrct: bigint,
+    prevCrwdLoanPrct: bigint,
+    referedPrct: bigint,
+    heavyWeight: bigint
 }
 
 export interface KusamaTransformConfig {
