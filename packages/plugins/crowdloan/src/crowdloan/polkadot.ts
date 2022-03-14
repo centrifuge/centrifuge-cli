@@ -126,11 +126,13 @@ async function transformIntoRewardee(
     const codes = await Crowdloan.fetchCodeAddressPairs('centrifuge', sqlConfig);
     for (const [account, contributions] of contributors) {
         let finalReward = BigInt(0);
-        let contributionSum = BigInt(0);
+        let contributionSumInDot = BigInt(0);
+        let contributionSumInCfg = BigInt(0);
 
         for (const contributor of contributions) {
-            contributionSum += contributor.contribution;
+            contributionSumInDot += contributor.contribution;
             let contributionAsCfg = (contributor.contribution * config.decimalDifference * config.conversionRate) / BigInt(1000000000);
+            contributionSumInCfg += contributionAsCfg;
             finalReward += contributionAsCfg;
 
             let ownerOfCode = codes.get(contributor.memo);
@@ -158,8 +160,10 @@ async function transformIntoRewardee(
             }
         }
 
-        if (contributionSum >= BigInt(5000) * config.decimalDifference) {
-            finalReward += (finalReward * config.heavyWeight) / BigInt(100);
+        // 50_000_000_000_000 = 5000 DOT
+        let heavyWeightInDot = BigInt(50_000_000_000_000);
+        if (contributionSumInDot >= heavyWeightInDot) {
+            finalReward += (contributionSumInCfg * config.heavyWeight) / BigInt(100);
         }
 
         if (rewardees.has(account)){
