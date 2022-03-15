@@ -758,7 +758,12 @@ export default class Crowdloan extends CliBaseCommand {
                 this.sqlCfg
             );
         } else if (network === 'Polkadot') {
-            return getContributionsPolkadot();
+            return getContributionsPolkadot(this.paraApi,
+                this.crwdloanCfg.crowdloans,
+                this.crwdloanCfg.transformation.polkadot,
+                this.logger.getChildLogger({name: "Crowdloan - Polkadot"}),
+                this.sqlCfg
+            );
         } else {
             return Promise.reject(`Unknown network ${network}. Aborting!`);
         }
@@ -840,7 +845,7 @@ export default class Crowdloan extends CliBaseCommand {
         return addressSS58 === undefined ? undefined : '0x' + hexEncode(decodeAddress(addressSS58));
     }
 
-    static async fetchCodesFromAddress(address: string, table: string, sqlCfg: Configuration): Promise<Array<string> | undefined> {
+    static async fetchCodesFromAddress(address: string, table: string, ss58format: number, sqlCfg: Configuration): Promise<Array<string> | undefined> {
         const client = new Client(sqlCfg);
         await client.connect();
 
@@ -848,7 +853,7 @@ export default class Crowdloan extends CliBaseCommand {
             return;
         }
 
-        const addressSS58 = encodeAddress(address,2);
+        const addressSS58 = encodeAddress(address, ss58format);
 
         const results = client.query(`
             SELECT referral_code FROM ${table} WHERE wallet_address='${addressSS58}'
