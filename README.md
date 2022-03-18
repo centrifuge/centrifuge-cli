@@ -17,3 +17,12 @@ yarn install
 lerna run build
 ```
 
+## Run
+```shell=
+./packages/cli/bin/run.js [COMMAND]
+```
+
+Example:
+```shell=
+./packages/cli/bin/run.js migration ws://127.0.0.1:9998 ws://127.0.0.1:9994 --config ./packages/plugins/migration/config/test-migration-config.json --creds ./packages/plugins/migration/config/alice-creds.json --verify
+```

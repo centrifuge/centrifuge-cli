@@ -1,0 +1,46 @@
+{
+    "modules": [
+        {
+            "name": "Vesting",
+            "item": {
+                "name": "Vesting"
+            }
+        },
+        {
+            "name": "Proxy",
+            "item": {
+                "name": "Proxies"
+            }
+        },
+        {
+            "name": "Balances",
+            "item": {
+                "name": "TotalIssuance"
+            }
+        },
+        {
+            "name": "System",
+            "item": {
+                "name": "Account"
+            }
+        }
+    ],
+    "sequence": [
+        {
+            "name": "Balances",
+            "item": "TotalIssuance"
+        },
+        {
+            "name": "System",
+            "item": "Account"
+        },
+        {
+            "name": "Proxy",
+            "item": "Proxies"
+        },
+        {
+            "name": "Vesting",
+            "item": "Vesting"
+        }
+    ]
+}
