@@ -1,13 +1,14 @@
-import {ApiPromise} from "@polkadot/api";
-import {CrowdloanSpec, PolkadotTransformConfig, AccountId, Balance} from "./interfaces";
+import '@polkadot/api-augment/substrate';
+import { ApiPromise } from "@polkadot/api";
+import { CrowdloanSpec, PolkadotTransformConfig, AccountId, Balance } from "./interfaces";
 import Crowdloan from "../commands/crowdloan";
-import {Logger as TsLogger} from 'tslog';
-import {BigNumber} from 'bignumber.js'
-import {BIT_SIGNED} from "@polkadot/types/extrinsic/constants";
+import { Logger as TsLogger } from 'tslog';
+import { BigNumber } from 'bignumber.js'
+import { BIT_SIGNED } from "@polkadot/types/extrinsic/constants";
 import ownKeys = Reflect.ownKeys;
-import {Configuration} from "ts-postgres";
-import {encodeAddress} from "@polkadot/keyring";
-import {Logger} from "@centrifuge-cli/core/dist/logger";
+import { Configuration } from "ts-postgres";
+import { encodeAddress } from "@polkadot/keyring";
+import { Logger } from "@centrifuge-cli/core/dist/logger";
 
 const axios = require('axios').default;
 
@@ -19,7 +20,7 @@ export async function getContributions(
     sqlConfig: Configuration
 ): Promise<Map<AccountId, Balance>> {
     // Try fetching from web
-    let contributors:  Map<string, Array<Contributor>>;
+    let contributors: Map<string, Array<Contributor>>;
 
     try {
         contributors = await fetchFromWebService(logger);
@@ -56,7 +57,7 @@ async function fetchFromWebService(log: TsLogger): Promise<Map<AccountId, Array<
         });
 
         let overall = BigInt(0);
-        if (response !== undefined && response.status === 200 ) {
+        if (response !== undefined && response.status === 200) {
             for (const noType of response.data.data.contributions) {
 
                 if (invalidNoType(noType)) {
@@ -81,7 +82,7 @@ async function fetchFromWebService(log: TsLogger): Promise<Map<AccountId, Array<
                     : contributions.set(account, Array.from([contributor]));
             }
 
-        log.info("Overall contributions: " + overall);
+            log.info("Overall contributions: " + overall);
         } else {
             return Promise.reject("Failure fetching data from webservice. Response " + JSON.stringify(response, null, '\t'));
         }
@@ -95,10 +96,10 @@ async function fetchFromWebService(log: TsLogger): Promise<Map<AccountId, Array<
 
 function invalidNoType(noType: any): boolean {
     return noType.id === null
-    || noType.balance === null
-    || noType.blockNumber === null
-    || noType.earlyBird === null
-    || noType.prevContributed === null;
+        || noType.balance === null
+        || noType.blockNumber === null
+        || noType.earlyBird === null
+        || noType.prevContributed === null;
 }
 
 function getAccount(id: string, log: TsLogger): string {
@@ -166,7 +167,7 @@ async function transformIntoRewardee(
             finalReward += (contributionSumInCfg * config.heavyWeight) / BigInt(100);
         }
 
-        if (rewardees.has(account)){
+        if (rewardees.has(account)) {
             // @ts-ignore
             let alreadyContribution: bigint = rewardees.get(account);
             rewardees.set(account, alreadyContribution + finalReward);
@@ -177,7 +178,7 @@ async function transformIntoRewardee(
 
     let typedRewardees = new Map();
     // Need to create AccountId types here
-    for(const [account, reward] of rewardees) {
+    for (const [account, reward] of rewardees) {
         typedRewardees.set(account, reward);
         logger.debug(`Finalizing rewards for account ${encodeAddress(account, 0)} (hex: ${account}) with reward of ${reward}`)
     }

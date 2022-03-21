@@ -1,6 +1,7 @@
+import '@polkadot/api-augment/substrate';
 import { ApiPromise } from "@polkadot/api";
-import {StorageKey} from "@polkadot/types";
-import { xxhashAsHex, blake2AsHex} from "@polkadot/util-crypto";
+import { StorageKey } from "@polkadot/types";
+import { xxhashAsHex, blake2AsHex } from "@polkadot/util-crypto";
 import { Hash } from "@polkadot/types/interfaces";
 import { hexEncode } from "@centrifuge-cli/util";
 
@@ -15,10 +16,10 @@ export enum Hasher {
     Blake2_256
 }
 
-export async function createDefaultChildStorageKey(api: ApiPromise, levels: Array<[Uint8Array | string , Hasher]>): Promise<StorageKey> {
+export async function createDefaultChildStorageKey(api: ApiPromise, levels: Array<[Uint8Array | string, Hasher]>): Promise<StorageKey> {
     let key = "0x" + await hexEncode(":child_storage:default:");
 
-    for (const level of levels){
+    for (const level of levels) {
         key = key.concat(await hash(level[0], level[1]));
     }
 
@@ -28,7 +29,7 @@ export async function createDefaultChildStorageKey(api: ApiPromise, levels: Arra
 export async function createStorageKey(api: ApiPromise, levels: Array<[string | Uint8Array, Hasher]>): Promise<StorageKey> {
     let key = "0x";
 
-    for (const level of levels){
+    for (const level of levels) {
         key = key.concat(await hash(level[0], level[1]));
     }
 
@@ -36,9 +37,9 @@ export async function createStorageKey(api: ApiPromise, levels: Array<[string | 
 }
 
 async function hash(input: string | Uint8Array, hasher: Hasher): Promise<string> {
-    if (hasher === Hasher.None){
+    if (hasher === Hasher.None) {
         return await hexEncode(input);
-    } else if(hasher === Hasher.Twox64) {
+    } else if (hasher === Hasher.Twox64) {
         return xxhashAsHex(input, 64).slice(2);
     } else if (hasher === Hasher.Twox64Concat) {
         return xxhashAsHex(input, 64).slice(2) + await hexEncode(input);
@@ -57,7 +58,7 @@ async function hash(input: string | Uint8Array, hasher: Hasher): Promise<string>
     }
 }
 
-export async function fetchState(api: ApiPromise, key: StorageKey, at?: Hash): Promise<Array<[ StorageKey, Uint8Array]>> {
+export async function fetchState(api: ApiPromise, key: StorageKey, at?: Hash): Promise<Array<[StorageKey, Uint8Array]>> {
     // The substrate api does provide the actual prefix, as the next_key, as we do here, when next key
     // is not available. In order to use the at option, we do this here upfront.
     try {
@@ -117,7 +118,7 @@ export async function fetchChildState(
     at?: Hash,
     prefixOfSearch?: StorageKey,
     startKey?: StorageKey
-): Promise<Array<[ StorageKey, Uint8Array]>> {
+): Promise<Array<[StorageKey, Uint8Array]>> {
     // The substrate api does provide the actual prefix, as the next_key, as we do here, when next key
     // is not available. In order to use the at option, we do this here upfront.
     try {

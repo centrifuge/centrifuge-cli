@@ -19,7 +19,7 @@
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --max-warnings=0"
   },
   "dependencies": {
-    "@polkadot/api": "^6.5.2",
+    "@polkadot/api": "^7.13.1",
     "@centrifuge-cli/core": "0.1.0",
     "@centrifuge-cli/util": "0.1.0"
   }

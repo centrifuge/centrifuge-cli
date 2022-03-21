@@ -1,13 +1,15 @@
-import {ApiPromise, SubmittableResult} from "@polkadot/api";
-import { xxhashAsHex} from "@polkadot/util-crypto";
-import {AccountId, Balance, Hash, VestingInfo} from "@polkadot/types/interfaces";
-import {StorageItemElement, PalletElement, StorageElement, StorageItem, StorageValueValue, StorageMapValue} from "../migration/common";
-import {ApiTypes, SubmittableExtrinsic} from "@polkadot/api/types";
-import {KeyringPair} from "@polkadot/keyring/types";
-import {StorageKey} from "@polkadot/types";
-import {fork} from "../migration/fork";
-import {compactAddLength} from "@polkadot/util"
-import {Dispatcher} from "@centrifuge-cli/dispatcher/dist/dispatcher";
+import '@polkadot/api-augment/substrate';
+import { ApiPromise, SubmittableResult } from "@polkadot/api";
+import { xxhashAsHex } from "@polkadot/util-crypto";
+import { AccountId, Balance, Hash, VestingInfo } from "@polkadot/types/interfaces";
+import { StorageItemElement, PalletElement, StorageElement, StorageItem, StorageValueValue, StorageMapValue } from "../migration/common";
+import { ApiTypes, SubmittableExtrinsic } from "@polkadot/api/types";
+import { KeyringPair } from "@polkadot/keyring/types";
+import { StorageKey } from "@polkadot/types";
+import { fork } from "../migration/fork";
+import { compactAddLength } from "@polkadot/util"
+import { Dispatcher } from "@centrifuge-cli/dispatcher/dist/dispatcher";
+import { Logger } from "@centrifuge-cli/core/src/logger";
 
 export async function verifyMigration(
     toApi: ApiPromise,
@@ -17,14 +19,14 @@ export async function verifyMigration(
     atTo: Hash,
     startFrom: Hash,
     atFrom: Hash
-): Promise<Array<[StorageKey,  Uint8Array]>> {
+): Promise<Array<[StorageKey, Uint8Array]>> {
     const forkDataOld = await fork(fromApi, storageItems, atFrom);
     const forkDataNew = await fork(toApi, storageItems, atTo);
 
     const startToAsNum = (await toApi.rpc.chain.getBlock(startTo)).block.header.number.toBigInt();
     const startFromAsNum = (await fromApi.rpc.chain.getBlock(startFrom)).block.header.number.toBigInt();
 
-    let failedVerification= new Array();
+    let failedVerification = new Array();
 
     // create a good counter
     let itemsToCheck = 0;
@@ -37,27 +39,27 @@ export async function verifyMigration(
     for (const [key, oldData] of Array.from(forkDataOld)) {
 
         let newData = forkDataNew.get(key);
-        if (newData === undefined){
+        if (newData === undefined) {
             failedVerification.push(...oldData);
         } else {
             if (key === xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2)) {
                 let failed = await verifySystemAccount(oldData, fromApi, newData, toApi);
-                if(failed.length !== 0) {
+                if (failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
-            } else if (key === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)){
+            } else if (key === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)) {
                 let failed = await verifyBalanceTotalIssuance(oldData, fromApi, newData, toApi, startToAsNum);
-                if(failed.length !== 0) {
+                if (failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
-            } else if (key === xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2)){
+            } else if (key === xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2)) {
                 let failed = await verifyVestingVesting(oldData, fromApi, newData, toApi, startFromAsNum, startToAsNum);
-                if(failed.length !== 0) {
+                if (failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
-            } else if (key === xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2)){
+            } else if (key === xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2)) {
                 let failed = await verifyProxyProxies(oldData, fromApi, newData, toApi);
-                if(failed.length !== 0) {
+                if (failed.length !== 0) {
                     failedVerification.push(...failed);
                 }
             } else {
@@ -84,8 +86,8 @@ async function verifySystemAccount(
     }, new Map<string, Uint8Array>());
 
     let checked = 0;
-    for(let [key, value] of oldData) {
-        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+    for (let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    " + checked + "/ \r");
 
         let oldAccount = oldApi.createType('AccountInfo', value);
 
@@ -94,14 +96,13 @@ async function verifySystemAccount(
             let newAccount = newApi.createType('AccountInfo', newScale);
 
             if (oldAccount.data.free.toBigInt() + oldAccount.data.reserved.toBigInt()
-                !== newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt())
-            {
+                !== newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt()) {
                 let newAccountId = newApi.createType("AccountId", key.toU8a(true).slice(-32));
                 let oldAccountId = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
                 console.log(
                     "ERROR ACCOUNT: old and new value does not match... \n   Old: "
                     + oldAccount.data.free.toBigInt() + oldAccount.data.reserved.toBigInt()
-                    +" vs. New: " +newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt()
+                    + " vs. New: " + newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt()
                     + "\n    for account new " + newAccountId.toHuman() + " account old " + oldAccountId.toHuman()
                 );
                 failed.push([key, value]);
@@ -120,12 +121,12 @@ async function verifySystemAccount(
 }
 
 async function verifyBalanceTotalIssuance(
-    oldData: Array<[StorageKey,  Uint8Array]>,
+    oldData: Array<[StorageKey, Uint8Array]>,
     oldApi: ApiPromise,
-    newData: Array<[StorageKey,  Uint8Array]>,
+    newData: Array<[StorageKey, Uint8Array]>,
     newApi: ApiPromise,
     migrationStartBlock: bigint
-): Promise<Array<[StorageKey,  Uint8Array]>> {
+): Promise<Array<[StorageKey, Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -134,8 +135,8 @@ async function verifyBalanceTotalIssuance(
     }, new Map<string, Uint8Array>());
 
     let checked = 0;
-    for(let [key, value] of oldData) {
-        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+    for (let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    " + checked + "/ \r");
 
         let oldIssuance = oldApi.createType('Balance', value);
 
@@ -165,11 +166,11 @@ async function verifyBalanceTotalIssuance(
 }
 
 async function verifyProxyProxies(
-    oldData: Array<[StorageKey,  Uint8Array]>,
+    oldData: Array<[StorageKey, Uint8Array]>,
     oldApi: ApiPromise,
-    newData: Array<[StorageKey,  Uint8Array]>,
+    newData: Array<[StorageKey, Uint8Array]>,
     newApi: ApiPromise
-): Promise<Array<[StorageKey,  Uint8Array]>> {
+): Promise<Array<[StorageKey, Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -178,8 +179,8 @@ async function verifyProxyProxies(
     }, new Map<string, Uint8Array>());
 
     let checked = 0;
-    for(let [key, value] of oldData) {
-        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+    for (let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    " + checked + "/ \r");
 
         // @ts-ignore
         let oldProxyInfo = oldApi.createType('(Vec<(AccountId, ProxyType)>, Balance)', value);
@@ -197,7 +198,7 @@ async function verifyProxyProxies(
             ) {
                 // Now also check each delegate of this proxy entry
                 // @ts-ignore
-                for(const oldDelegate of oldProxyInfo[0]) {
+                for (const oldDelegate of oldProxyInfo[0]) {
                     let found = false;
                     let oldAccount = oldDelegate[0].toHex();
 
@@ -208,13 +209,12 @@ async function verifyProxyProxies(
                         let newProxyType = newApi.createType("ProxyType", oldDelegate[1]);
                         if (oldAccount === newAccount &&
                             // @ts-ignore
-                            newDelegate['proxyType'].toHex() === newProxyType.toHex())
-                        {
+                            newDelegate['proxyType'].toHex() === newProxyType.toHex()) {
                             found = true;
                         }
                     }
 
-                    if (!found){
+                    if (!found) {
                         console.log("ERROR PROXIES: Could not find delegate for migrated proxy. Missing " + oldAccount);
                         failed.push([key, value]);
                     }
@@ -224,7 +224,7 @@ async function verifyProxyProxies(
                 // @ts-ignore
                 for (const newDelegate of newProxyInfo[0]) {
                     // @ts-ignore
-                    msg += newDelegate['delegate'].toHuman() +", "+ newDelegate['proxyType'].toHuman()+ "; ";
+                    msg += newDelegate['delegate'].toHuman() + ", " + newDelegate['proxyType'].toHuman() + "; ";
                 }
                 //@ts-ignore
                 msg += ", " + newProxyInfo[1].toHuman()
@@ -243,13 +243,13 @@ async function verifyProxyProxies(
 }
 
 async function verifyVestingVesting(
-    oldData: Array<[StorageKey,  Uint8Array]>,
+    oldData: Array<[StorageKey, Uint8Array]>,
     oldApi: ApiPromise,
-    newData: Array<[StorageKey,  Uint8Array]>,
+    newData: Array<[StorageKey, Uint8Array]>,
     newApi: ApiPromise,
     atFrom: bigint,
     atTo: bigint
-): Promise<Array<[StorageKey,  Uint8Array]>> {
+): Promise<Array<[StorageKey, Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -258,8 +258,8 @@ async function verifyVestingVesting(
     }, new Map<string, Uint8Array>());
 
     let checked = 0;
-    for(let [key, value] of oldData) {
-        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+    for (let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    " + checked + "/ \r");
 
         let oldVestingInfo = oldApi.createType('VestingInfo', value);
 
@@ -280,11 +280,11 @@ async function verifyVestingVesting(
                 const nullOrOne = remainingBlocksVestingOld - (remainingBlocksVestingNew * BigInt(2));
 
                 // Due to the arithmetics we accept if a vesting is off by 2 blocks in each direction.
-                if (!(BigInt(-2)  <= nullOrOne &&  nullOrOne <= BigInt(2))) {
+                if (!(BigInt(-2) <= nullOrOne && nullOrOne <= BigInt(2))) {
                     let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
                     let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
-                    console.log("ERROR: Remaining blocks for vesting are not equal...\n   Old: " +remainingBlocksVestingOld +" vs. New: "+remainingBlocksVestingNew*BigInt(2)+"\n    for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
-                     failed.push([key, value]);
+                    console.log("ERROR: Remaining blocks for vesting are not equal...\n   Old: " + remainingBlocksVestingOld + " vs. New: " + remainingBlocksVestingNew * BigInt(2) + "\n    for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
+                    failed.push([key, value]);
                 }
 
             } else {
@@ -342,19 +342,17 @@ export async function migrate(
     sequence: Array<StorageElement>,
     data: Map<string, Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>>,
     cbErr: (failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>) => void
-) : Promise<Array<[Hash, bigint]>>
-{
-    const { nonce } = await toApi.query.system.account(executor.address);
-
+): Promise<Array<[Hash, bigint]>> {
+    const { nonce, data: _balance } = await toApi.query.system.account(executor.address);
     let dispatcher = new Dispatcher(toApi, executor, nonce.toBigInt(), cbErr, 5, 50);
 
     let dispatchables: Array<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Array();
-
+    console.log("Getting data");
     for (const one of sequence) {
         if (one instanceof PalletElement) {
             let palletData = data.get(one.palletHash);
             if (palletData !== undefined) {
-                for(const [key, data] of Array.from(palletData)) {
+                for (const [key, data] of Array.from(palletData)) {
                     dispatchables.push(data);
                 }
             } else {
@@ -385,11 +383,11 @@ export async function migrate(
 async function prepareSystem(
     toApi: ApiPromise,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+): Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
     // Match against the actual storage items of a pallet.
-    for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
+    for (let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === (xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2))) {
             xts.set(palletStorageItemKey, await prepareSystemAccount(toApi, values));
 
@@ -404,11 +402,11 @@ async function prepareSystem(
 async function prepareProxy(
     toApi: ApiPromise,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+): Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
     // Match against the actual storage items of a pallet.
-    for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
+    for (let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === (xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2))) {
             xts.set(palletStorageItemKey, await prepareProxyProxies(toApi, values));
 
@@ -426,13 +424,13 @@ async function prepareProxyProxies(
 ): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
     let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
 
-    let packetOfProxies: Array<[AccountId, Balance,  Uint8Array]> = new Array();
+    let packetOfProxies: Array<[AccountId, Balance, Uint8Array]> = new Array();
 
     // @ts-ignore
     const maxProxiesOnChain = toApi.consts.migration.migrationMaxProxies.toNumber();
 
     // For safety reasons we reduce 1/3 of the max amount here
-    const maxProxies = Math.round(maxProxiesOnChain - ((1/3) * maxProxiesOnChain));
+    const maxProxies = Math.round(maxProxiesOnChain - ((1 / 3) * maxProxiesOnChain));
 
     let counter = 0;
     for (const item of values) {
@@ -440,7 +438,7 @@ async function prepareProxyProxies(
         // In this case it defines the actual amount that shall be reserved on the delegator
         counter += 1;
         if (item instanceof StorageMapValue) {
-            if (packetOfProxies.length === maxProxies - 1  || counter === values.length) {
+            if (packetOfProxies.length === maxProxies - 1 || counter === values.length) {
                 // push the last element and prepare extrinsic
                 let accountId = toApi.createType("AccountId", item.patriciaKey.toU8a(true).slice(-32))
                 // @ts-ignore
@@ -474,19 +472,19 @@ async function prepareSystemAccount(
 ): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
     let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
 
-    let packetOfAccounts: Array<[ Uint8Array,  Uint8Array]> = new Array();
+    let packetOfAccounts: Array<[Uint8Array, Uint8Array]> = new Array();
 
     // @ts-ignore
     const maxAccountsOnChain = toApi.consts.migration.migrationMaxAccounts.toNumber();
 
     // For safety reasons we reduce 1/3 of the max amount here
-    const maxAccounts = Math.round(maxAccountsOnChain - ((1/3) * maxAccountsOnChain));
+    const maxAccounts = Math.round(maxAccountsOnChain - ((1 / 3) * maxAccountsOnChain));
 
     let counter = 0;
     for (const item of values) {
         counter += 1;
         if (item instanceof StorageMapValue) {
-            if (packetOfAccounts.length === maxAccounts - 1  || counter === values.length) {
+            if (packetOfAccounts.length === maxAccounts - 1 || counter === values.length) {
                 // push the last element and prepare extrinsic
                 packetOfAccounts.push(await retrieveIdAndAccount(item))
                 xts.push(toApi.tx.migration.migrateSystemAccount(packetOfAccounts))
@@ -504,7 +502,7 @@ async function prepareSystemAccount(
 }
 
 
-async function retrieveIdAndAccount(item: StorageMapValue): Promise<[ Uint8Array,  Uint8Array]> {
+async function retrieveIdAndAccount(item: StorageMapValue): Promise<[Uint8Array, Uint8Array]> {
     const id = compactAddLength(item.patriciaKey.toU8a(true));
     const value = compactAddLength(item.value);
 
@@ -514,10 +512,10 @@ async function retrieveIdAndAccount(item: StorageMapValue): Promise<[ Uint8Array
 async function prepareBalances(
     toApi: ApiPromise,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+): Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
-    for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
+    for (let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)) {
             xts.set(palletStorageItemKey, await prepareBalancesTotalIssuance(toApi, values));
         } else {
@@ -554,10 +552,10 @@ async function prepareBalancesTotalIssuance(
 async function prepareVesting(
     toApi: ApiPromise,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
+): Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
     let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
 
-    for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
+    for (let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2)) {
             xts.set(palletStorageItemKey, await prepareVestingVestingInfo(toApi, values));
 
@@ -581,7 +579,7 @@ async function prepareVestingVestingInfo(
     const maxVestingsOnChain = toApi.consts.migration.migrationMaxVestings.toNumber();
 
     // For safety reasons we reduce 1/3 of the max amount here
-    const maxVestings = Math.round(maxVestingsOnChain - ((1/3) * maxVestingsOnChain));
+    const maxVestings = Math.round(maxVestingsOnChain - ((1 / 3) * maxVestingsOnChain));
 
     let counter = 0;
     for (const item of values) {
@@ -590,7 +588,7 @@ async function prepareVestingVestingInfo(
             let vestingInfo = toApi.createType("VestingInfo", item.value);
             let accountId = toApi.createType("AccountId", item.patriciaKey.toU8a(true).slice(-32))
 
-            if (packetOfVestings.length === maxVestings - 1  || counter === values.length){
+            if (packetOfVestings.length === maxVestings - 1 || counter === values.length) {
                 // push the last element and prepare extrinsic
                 packetOfVestings.push([accountId, vestingInfo])
                 xts.push(toApi.tx.migration.migrateVestingVesting(packetOfVestings))

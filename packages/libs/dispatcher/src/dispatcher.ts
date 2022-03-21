@@ -1,8 +1,9 @@
-import {ApiTypes, SubmittableExtrinsic} from "@polkadot/api/types";
-import {xxhashAsHex} from "@polkadot/util-crypto";
-import {ApiPromise, Keyring, SubmittableResult, WsProvider} from "@polkadot/api";
-import {KeyringPair} from "@polkadot/keyring/types";
-import {Hash} from "@polkadot/types/interfaces";
+import '@polkadot/api-augment/substrate';
+import { ApiTypes, SubmittableExtrinsic } from "@polkadot/api/types";
+import { xxhashAsHex } from "@polkadot/util-crypto";
+import { ApiPromise, Keyring, SubmittableResult, WsProvider } from "@polkadot/api";
+import { KeyringPair } from "@polkadot/keyring/types";
+import { Hash } from "@polkadot/types/interfaces";
 
 export class Dispatcher {
     readonly maxConcurrent: number;
@@ -33,14 +34,14 @@ export class Dispatcher {
         this.dispatchHashes = new Array();
     }
 
-    async nextNonce(): Promise<bigint>{
+    async nextNonce(): Promise<bigint> {
         let tmp = this.nonce;
         this.nonce = tmp + BigInt(1);
         return tmp;
     }
 
     async returnNonce(activeNonce: bigint): Promise<boolean> {
-        if(this.nonce === activeNonce + BigInt(1)) {
+        if (this.nonce === activeNonce + BigInt(1)) {
             this.nonce = activeNonce;
             return true;
         } else {
@@ -49,7 +50,7 @@ export class Dispatcher {
     }
 
     async dryRun(xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>): Promise<boolean> {
-        for(const xt of xts) {
+        for (const xt of xts) {
             // TODO: Currently no check is possible, as the nodes seem not to suply this rpc method...
             /*
             // @ts-ignore
@@ -99,9 +100,9 @@ export class Dispatcher {
 
             const send = async () => {
                 let activeNonce = await this.nextNonce();
-                const unsub = await extrinsic.signAndSend(this.signer, {nonce: activeNonce}, ({ events = [], status}) => {
+                const unsub = await extrinsic.signAndSend(this.signer, { nonce: activeNonce }, ({ events = [], status }) => {
                     if (status.isInBlock) {
-                        events.forEach(({event: {data, method, section}, phase}) => {
+                        events.forEach(({ event: { data, method, section }, phase }) => {
                             if (method === 'ExtrinsicSuccess') {
                                 this.dispatchHashes.push([status.asInBlock, phase.asApplyExtrinsic.toBigInt()]);
                             } else if (method === 'ExtrinsicFailed') {
@@ -129,7 +130,7 @@ export class Dispatcher {
         }
     }
 
-    async getResults() : Promise<Array<[Hash, bigint]>> {
+    async getResults(): Promise<Array<[Hash, bigint]>> {
         while (BigInt(this.dispatchHashes.length) !== this.dispatched && this.running !== 0) {
             process.stdout.write("Waiting for results. Returned calls " + this.dispatchHashes.length + " vs. dispatched " + this.dispatched + ". Running: " + this.running + " \r");
             await new Promise(r => setTimeout(r, 6000));
@@ -162,12 +163,12 @@ export class Dispatcher {
                 const send = async () => {
                     let activeNonce = await this.nextNonce();
                     //@ts-ignore // We are checking if xt is undefined after shift
-                    const unsub = await extrinsic.signAndSend(this.signer, {nonce: activeNonce}, ({
-                                                                                                      events = [],
-                                                                                                      status
-                                                                                                  }) => {
+                    const unsub = await extrinsic.signAndSend(this.signer, { nonce: activeNonce }, ({
+                        events = [],
+                        status
+                    }) => {
                         if (status.isInBlock) {
-                            events.forEach(({event: {data, method, section}, phase}) => {
+                            events.forEach(({ event: { data, method, section }, phase }) => {
                                 if (method === 'ExtrinsicSuccess') {
                                     this.dispatchHashes.push([status.asInBlock, phase.asApplyExtrinsic.toBigInt()]);
                                     callNext();
@@ -206,9 +207,9 @@ export class Dispatcher {
         const send = async () => {
             let activeNonce = await this.nextNonce();
             // @ts-ignore // We are checking if xt is undefined after shift
-            const unsub = await xt.signAndSend(this.signer, {nonce: activeNonce}, ({events = [], status}) => {
+            const unsub = await xt.signAndSend(this.signer, { nonce: activeNonce }, ({ events = [], status }) => {
                 if (status.isInBlock) {
-                    events.forEach(({event: {data, method, section}, phase}) => {
+                    events.forEach(({ event: { data, method, section }, phase }) => {
                         if (method === 'ExtrinsicSuccess') {
                             this.dispatchHashes.push([status.asInBlock, phase.asApplyExtrinsic.toBigInt()]);
                             callNext();
@@ -258,18 +259,18 @@ export class Dispatcher {
             }
             this.dispatched += BigInt(1);
             this.running += 1;
-            console.log("Sending with nonce " + this.nonce + ", running " + this.running +" : " + extrinsic.meta.name.toString());
+            console.log("Sending with nonce " + this.nonce + ", running " + this.running + " : " + extrinsic.meta.name.toString());
 
             const send = async () => {
                 let activeNonce = await this.nextNonce();
                 const unsub = await this.api.tx.sudo.sudo(extrinsic)
-                    .signAndSend(this.signer, {nonce: activeNonce}, ({events = [], status}) => {
+                    .signAndSend(this.signer, { nonce: activeNonce }, ({ events = [], status }) => {
                         if (status.isInBlock || status.isFinalized) {
                             console.log("Sending with nonce " + activeNonce + " is in Block/Finalized : " + extrinsic.meta.name.toString());
-                            events.filter(({event}) =>
+                            events.filter(({ event }) =>
                                 this.api.events.sudo.Sudid.is(event)
                             )
-                                .forEach(({event: {data: [result]}, phase}) => {
+                                .forEach(({ event: { data: [result] }, phase }) => {
                                     // We know that `Sudid` returns just a `Result`
                                     // @ts-ignore
                                     if (result.isError) {
@@ -314,9 +315,9 @@ export class Dispatcher {
             let activeNonce = await this.nextNonce();
             const unsub = await this.api.tx.utility
                 .batch(xts)
-                .signAndSend(this.signer, {nonce: activeNonce}, ({status, events}) => {
+                .signAndSend(this.signer, { nonce: activeNonce }, ({ status, events }) => {
                     if (status.isInBlock) {
-                        events.forEach(({event: {data, method, section}, phase}) => {
+                        events.forEach(({ event: { data, method, section }, phase }) => {
                             if (method === 'ExtrinsicSuccess') {
                                 this.dispatchHashes.push([status.asInBlock, phase.asApplyExtrinsic.toBigInt()]);
                             } else if (method === 'ExtrinsicFailed') {
@@ -353,7 +354,7 @@ export abstract class StorageElement {
     }
 }
 
-export class PalletElement extends StorageElement{
+export class PalletElement extends StorageElement {
     readonly pallet: string
     readonly palletHash: string
 
@@ -381,7 +382,7 @@ export class StorageItemElement extends StorageElement {
     }
 }
 
-export async function test_run () {
+export async function test_run() {
     const wsProvider = new WsProvider("wss://fullnode-archive.centrifuge.io");
     const api = await ApiPromise.create({
         provider: wsProvider,
@@ -392,14 +393,14 @@ export async function test_run () {
         }
     });
 
-    const keyring = new Keyring({type: 'sr25519'});
+    const keyring = new Keyring({ type: 'sr25519' });
     let alice = keyring.addFromUri('//Alice');
     let failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
 
     const { nonce } = await api.query.system.account(alice.address);
 
     const cbErr = (xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>) => {
-        for(const xt of xts) {
+        for (const xt of xts) {
             console.log(xt.toHuman());
         }
     }
@@ -407,13 +408,13 @@ export async function test_run () {
     let dispatcher = new Dispatcher(api, alice, nonce.toBigInt(), cbErr, 10, 100);
 
     for (let i = 0; i < 100; i++) {
-        let send = async function sending(){
+        let send = async function sending() {
             const nonce = await dispatcher.nextNonce();
 
             await sendingInternal(dispatcher, i, nonce)
                 .catch(async (err) => {
                     console.log(err);
-                    await dispatcher.returnNonce(nonce).catch((err) => {console.log(err)});
+                    await dispatcher.returnNonce(nonce).catch((err) => { console.log(err) });
                 });
         };
 
@@ -423,7 +424,7 @@ export async function test_run () {
     api.disconnect();
 }
 
-async function sendingInternal(dispatcher: Dispatcher, anynumber: number, nonce: bigint): Promise<bigint>{
+async function sendingInternal(dispatcher: Dispatcher, anynumber: number, nonce: bigint): Promise<bigint> {
     if (anynumber % 2 === 0) {
         console.log("Run: " + anynumber + ", nonce: " + nonce);
     } else {

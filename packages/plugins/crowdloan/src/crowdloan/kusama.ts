@@ -1,12 +1,13 @@
-import {ApiPromise} from "@polkadot/api";
-import {CrowdloanSpec, KusamaTransformConfig, AccountId, Balance} from "./interfaces";
+import '@polkadot/api-augment/substrate';
+import { ApiPromise } from "@polkadot/api";
+import { CrowdloanSpec, KusamaTransformConfig, AccountId, Balance } from "./interfaces";
 import Crowdloan from "../commands/crowdloan";
-import {Logger as TsLogger} from 'tslog';
-import {BigNumber} from 'bignumber.js'
-import {BIT_SIGNED} from "@polkadot/types/extrinsic/constants";
+import { Logger as TsLogger } from 'tslog';
+import { BigNumber } from 'bignumber.js'
+import { BIT_SIGNED } from "@polkadot/types/extrinsic/constants";
 import ownKeys = Reflect.ownKeys;
-import {Configuration} from "ts-postgres";
-import {encodeAddress} from "@polkadot/keyring";
+import { Configuration } from "ts-postgres";
+import { encodeAddress } from "@polkadot/keyring";
 
 const axios = require('axios').default;
 
@@ -18,7 +19,7 @@ export async function getContributions(
     sqlConfig: Configuration
 ): Promise<Map<AccountId, Balance>> {
     // Try fetching from web
-    let contributors:  Map<string, Array<Contributor>>;
+    let contributors: Map<string, Array<Contributor>>;
 
     try {
         contributors = await fetchFromWebService();
@@ -34,34 +35,34 @@ async function fetchFromWebService(): Promise<Map<AccountId, Array<Contributor>>
     let contributions: Map<AccountId, Array<Contributor>> = new Map();
 
     try {
-      let response = await axios.get('https://crowdloan-ws.centrifuge.io/contributions');
+        let response = await axios.get('https://crowdloan-ws.centrifuge.io/contributions');
 
-      let overall = BigInt(0);
+        let overall = BigInt(0);
 
-      if (response !== undefined && response.status === 200 ) {
-          for (const noType of response.data) {
-              const contributor: Contributor = {
-                  account: noType.account,
-                  contribution: BigInt(noType.contribution),
-                  whenContributed: BigInt(noType.blockNumber),
-                  memo: noType.referralCode,
-                  first250PrevCrowdloan: JSON.parse(noType.isFirst250PrevCrwdloan),
-                  extrinsic: {
-                      block: BigInt(noType.extrinsic.blockNumber),
-                      index: Number(noType.extrinsic.index)
-                  }
-              };
+        if (response !== undefined && response.status === 200) {
+            for (const noType of response.data) {
+                const contributor: Contributor = {
+                    account: noType.account,
+                    contribution: BigInt(noType.contribution),
+                    whenContributed: BigInt(noType.blockNumber),
+                    memo: noType.referralCode,
+                    first250PrevCrowdloan: JSON.parse(noType.isFirst250PrevCrwdloan),
+                    extrinsic: {
+                        block: BigInt(noType.extrinsic.blockNumber),
+                        index: Number(noType.extrinsic.index)
+                    }
+                };
 
-              overall += BigInt(noType.contribution);
+                overall += BigInt(noType.contribution);
 
-              contributions.has(noType.account)
-                  ? contributions.get(noType.account)?.push(contributor)
-                  : contributions.set(noType.account, Array.from([contributor]));
-          }
+                contributions.has(noType.account)
+                    ? contributions.get(noType.account)?.push(contributor)
+                    : contributions.set(noType.account, Array.from([contributor]));
+            }
 
-      } else {
-          return Promise.reject("Failure fetching data from webservice. Response " + JSON.stringify(response, null, '\t'));
-      }
+        } else {
+            return Promise.reject("Failure fetching data from webservice. Response " + JSON.stringify(response, null, '\t'));
+        }
     } catch (err) {
         return Promise.reject(err);
     }
@@ -121,7 +122,7 @@ async function transformIntoRewardee(
             finalReward += first250Bonus;
         }
 
-        if (rewardees.has(account)){
+        if (rewardees.has(account)) {
             // @ts-ignore
             let alreadyContribution: bigint = rewardees.get(account);
             rewardees.set(account, alreadyContribution + finalReward);
@@ -132,7 +133,7 @@ async function transformIntoRewardee(
 
     let typedRewardees = new Map();
     // Need to create AccountId types here
-    for(const [account, reward] of rewardees) {
+    for (const [account, reward] of rewardees) {
         typedRewardees.set(account, reward);
         logger.debug(`Finalizing rewards for account ${encodeAddress(account, 2)} (hex: ${account}) with reward of ${reward}`)
     }
