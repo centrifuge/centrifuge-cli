@@ -1,0 +1,16 @@
+{
+    "modules": [
+        {
+            "name": "Vesting",
+            "item": {
+                "name": "Vesting"
+            }
+        }
+    ],
+    "sequence": [
+        {
+            "name": "Vesting",
+            "item": "Vesting"
+        }
+    ]
+}
