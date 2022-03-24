@@ -1,27 +1,27 @@
-import {ApiPromise} from "@polkadot/api";
+import { ApiPromise } from "@polkadot/api";
 import { xxhashAsHex } from "@polkadot/util-crypto";
-import {AccountInfo, Balance, Hash, ProxyDefinition} from "@polkadot/types/interfaces";
+import { AccountInfo, Balance, Hash, ProxyDefinition } from "@polkadot/types/interfaces";
 import { insertOrNewMap, StorageItem, StorageValueValue, StorageMapValue } from "../migration/common";
-import {StorageKey} from "@polkadot/types";
-import {compactAddLength} from "@polkadot/util";
+import { StorageKey } from "@polkadot/types";
+import { compactAddLength } from "@polkadot/util";
 
 export async function transform(
-    forkData: Map<string, Array<[ StorageKey, Uint8Array]>>,
+    forkData: Map<string, Array<[StorageKey, Uint8Array]>>,
     fromApi: ApiPromise,
     toApi: ApiPromise,
     startFrom: Hash,
     atFrom: Hash,
     atTo: Hash
-): Promise<Map<string, Map<string, Array<StorageItem>>>>   {
+): Promise<Map<string, Map<string, Array<StorageItem>>>> {
     let state: Map<string, Map<string, Array<StorageItem>>> = new Map();
 
     // For every prefix do the correct transformation.
     for (let [key, keyValues] of forkData) {
         // Match all prefixes we want to transform
-        if (key.startsWith(xxhashAsHex("System",128))) {
-             let palletKey = xxhashAsHex("System", 128);
-             let migratedPalletStorageItems = await transformSystem(fromApi, toApi, keyValues);
-             state.set(palletKey, migratedPalletStorageItems)
+        if (key.startsWith(xxhashAsHex("System", 128))) {
+            let palletKey = xxhashAsHex("System", 128);
+            let migratedPalletStorageItems = await transformSystem(fromApi, toApi, keyValues);
+            state.set(palletKey, migratedPalletStorageItems)
 
         } else if (key.startsWith(xxhashAsHex("Balances", 128))) {
             let palletKey = xxhashAsHex("Balances", 128);
@@ -38,7 +38,7 @@ export async function transform(
             let migratedPalletStorageItems = await transformProxy(fromApi, toApi, keyValues);
             state.set(palletKey, migratedPalletStorageItems)
 
-        }  else {
+        } else {
             return Promise.reject("Fetched data that can not be transformed. PatriciaKey is: " + key);
         }
     }
@@ -46,11 +46,11 @@ export async function transform(
     return state;
 }
 
-async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>):  Promise<Map<string, Array<StorageItem>>> {
+async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>): Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
 
     // Match against the actual storage items of a pallet.
-    for(let [patriciaKey, value] of keyValues) {
+    for (let [patriciaKey, value] of keyValues) {
         if (patriciaKey.toHex().startsWith(xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2);
             await insertOrNewMap(state, pkStorageItem, await transformProxyProxies(fromApi, toApi, patriciaKey, value));
@@ -62,7 +62,7 @@ async function transformProxy(fromApi: ApiPromise, toApi: ApiPromise, keyValues:
     return state;
 }
 
-async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldProxies:  Uint8Array): Promise<StorageItem> {
+async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldProxies: Uint8Array): Promise<StorageItem> {
     // @ts-ignore, see https://github.com/polkadot-js/api/issues/3746
     let oldProxyInfo = fromApi.createType('(Vec<(AccountId, ProxyType)>, Balance)', scaleOldProxies);
 
@@ -70,7 +70,7 @@ async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, com
 
     // For the checks if anonymous proxies, we check if CINC is part of the proxies. Which indicates, that
     // that it is indeed an anonymous proxy. As CINC itself is a multisig...
-    const CINC =  fromApi.createType("AccountId", "4djGpfJtHkS3kXBNtSFijf8xHbBY8mYvnUR7zrLM9bCyF7Js");
+    const CINC = fromApi.createType("AccountId", "4djGpfJtHkS3kXBNtSFijf8xHbBY8mYvnUR7zrLM9bCyF7Js");
     let CINCisDelegate = false;
 
     // 1. Iterate over all elements of the vector
@@ -101,9 +101,9 @@ async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, com
 
     // @ts-ignore, see https://github.com/polkadot-js/api/issues/3746
     let newProxyInfo = toApi.createType('(Vec<ProxyDefinition<AccountId, ProxyType, BlockNumber>>, Balance)',
-    [
-                proxies,
-                deposit
+        [
+            proxies,
+            deposit
         ]
     );
 
@@ -134,11 +134,11 @@ async function transformProxyProxies(fromApi: ApiPromise, toApi: ApiPromise, com
 }
 
 
-async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array ]>):  Promise<Map<string, Array<StorageItem>>> {
+async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>): Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
 
     // Match against the actual storage items of a pallet.
-    for(let [patriciaKey, value] of keyValues) {
+    for (let [patriciaKey, value] of keyValues) {
         let systemAccount = xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2);
         if (patriciaKey.toHex().startsWith(systemAccount)) {
             let pkStorageItem = xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2);
@@ -151,7 +151,7 @@ async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues
     return state;
 }
 
-async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldAccountInfo:  Uint8Array): Promise<StorageItem> {
+async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldAccountInfo: Uint8Array): Promise<StorageItem> {
     let oldAccountInfo = fromApi.createType("AccountInfo", scaleOldAccountInfo);
 
     let newAccountInfo = await toApi.createType("AccountInfo", [
@@ -167,7 +167,7 @@ async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, co
         ]
     ]);
 
-    if (oldAccountInfo.data.free.toBigInt() + oldAccountInfo.data.reserved.toBigInt()  !== newAccountInfo.data.free.toBigInt()) {
+    if (oldAccountInfo.data.free.toBigInt() + oldAccountInfo.data.reserved.toBigInt() !== newAccountInfo.data.free.toBigInt()) {
         let old = oldAccountInfo.data.free.toBigInt() + oldAccountInfo.data.reserved.toBigInt();
         return Promise.reject("Transformation failed. AccountData Balances. (Left: " + old + " vs. " + "Right: " + newAccountInfo.data.free.toBigInt());
     }
@@ -175,10 +175,10 @@ async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, co
     return new StorageMapValue(newAccountInfo.toU8a(true), completeKey);
 }
 
-async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey,  Uint8Array]>):  Promise<Map<string, Array<StorageItem>>>{
+async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>): Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
 
-    for(let [patriciaKey, value] of keyValues) {
+    for (let [patriciaKey, value] of keyValues) {
         if (patriciaKey.toHex().startsWith(xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2);
             await insertOrNewMap(state, pkStorageItem, await transformBalancesTotalIssuance(fromApi, toApi, patriciaKey, value));
@@ -190,7 +190,7 @@ async function transformBalances(fromApi: ApiPromise, toApi: ApiPromise, keyValu
     return state;
 }
 
-async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldTotalIssuance:  Uint8Array): Promise<StorageItem> {
+async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldTotalIssuance: Uint8Array): Promise<StorageItem> {
     let oldIssuance = fromApi.createType("Balance", scaleOldTotalIssuance);
     let newIssuance = toApi.createType("Balance", oldIssuance.toU8a(true));
 
@@ -201,13 +201,13 @@ async function transformBalancesTotalIssuance(fromApi: ApiPromise, toApi: ApiPro
     return new StorageValueValue(newIssuance.toU8a(true));
 }
 
-async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey,  Uint8Array]>, atFrom: Hash, atTo: Hash):  Promise<Map<string, Array<StorageItem>>> {
+async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValues: Array<[StorageKey, Uint8Array]>, atFrom: Hash, atTo: Hash): Promise<Map<string, Array<StorageItem>>> {
     let state: Map<string, Array<StorageItem>> = new Map();
     const atToAsNumber = (await toApi.rpc.chain.getBlock(atTo)).block.header.number.toBigInt();
-    const atFromAsNumber =  (await fromApi.rpc.chain.getBlock(atFrom)).block.header.number.toBigInt();
+    const atFromAsNumber = (await fromApi.rpc.chain.getBlock(atFrom)).block.header.number.toBigInt();
 
 
-    for(let [patriciaKey, value] of keyValues) {
+    for (let [patriciaKey, value] of keyValues) {
         if (patriciaKey.toHex().startsWith(xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2);
             await insertOrNewMap(state, pkStorageItem, await transformVestingVestingInfo(fromApi, toApi, patriciaKey, value, atFromAsNumber, atToAsNumber));
@@ -220,7 +220,7 @@ async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValue
     return state;
 }
 
-async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldVestingInfo:  Uint8Array, atFrom: bigint, atTo: bigint): Promise<StorageItem> {
+async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldVestingInfo: Uint8Array, atFrom: bigint, atTo: bigint): Promise<StorageItem> {
     let old = fromApi.createType("VestingInfo", scaleOldVestingInfo);
 
     let remainingLocked;
@@ -246,8 +246,7 @@ async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromis
         if (remainingLocked === BigInt(0)) {
             remainingLocked = BigInt(1);
         }
-        // * Multiplication by two: Take into account 12s block time
-        newPerBlock = (remainingLocked / remainingBlocks) * BigInt(2);
+        newPerBlock = (remainingLocked / remainingBlocks);
         // Ensure remaining locked is greater zero
         // If we are here, this must be checked manually...
         if (newPerBlock === BigInt(0)) {
@@ -256,18 +255,17 @@ async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromis
         }
         newStartingBlock = atTo;
 
-    } else if ((blockPeriodOldVesting - blocksPassedSinceVestingStart) <= 0 ) {
+    } else if ((blockPeriodOldVesting - blocksPassedSinceVestingStart) <= 0) {
         // If vesting is finished -> use same start block and give everything at first block
         remainingLocked = old.locked.toBigInt();
         newPerBlock = old.locked.toBigInt();
         newStartingBlock = atTo;
 
-    } else if ((old.startingBlock.toBigInt() - atFrom) >= 0){
-        // If vesting has not started yes -> use starting block as (old - blocks_passed_on_old_mainnet) / 2 and multiply per block by 2 to take into account
-        // 12s block time.
+    } else if ((old.startingBlock.toBigInt() - atFrom) >= 0) {
+        // If vesting has not started yes -> use starting block as (old - blocks_passed_on_old_mainnet).
         remainingLocked = old.locked.toBigInt();
-        newPerBlock = old.perBlock.toBigInt() * BigInt(2);
-        newStartingBlock = ((old.startingBlock.toBigInt() - atFrom) / BigInt(2)) + atTo;
+        newPerBlock = old.perBlock.toBigInt();
+        newStartingBlock = old.startingBlock.toBigInt() - atFrom + atTo;
 
     } else {
         throw Error("Unreachable code... Came here with old vesting info of: " + old.toHuman());
