@@ -11,6 +11,7 @@ import {cryptoWaitReady} from "@polkadot/util-crypto"
 import {getContributions as getContributionsKusama} from "../crowdloan/kusama";
 import {getContributions as getContributionsPolkadot} from "../crowdloan/polkadot";
 import { parse } from 'csv-parse';
+import '@polkadot/api-augment'
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 

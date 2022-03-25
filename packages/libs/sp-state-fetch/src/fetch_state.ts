@@ -3,6 +3,7 @@ import {StorageKey} from "@polkadot/types";
 import { xxhashAsHex, blake2AsHex} from "@polkadot/util-crypto";
 import { Hash } from "@polkadot/types/interfaces";
 import { hexEncode } from "@centrifuge-cli/util";
+import '@polkadot/api-augment'
 
 export enum Hasher {
     None,

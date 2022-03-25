@@ -3,6 +3,7 @@ import {xxhashAsHex} from "@polkadot/util-crypto";
 import {ApiPromise, Keyring, SubmittableResult, WsProvider} from "@polkadot/api";
 import {KeyringPair} from "@polkadot/keyring/types";
 import {Hash} from "@polkadot/types/interfaces";
+import '@polkadot/api-augment'
 
 export class Dispatcher {
     readonly maxConcurrent: number;
@@ -381,47 +382,47 @@ export class StorageItemElement extends StorageElement {
     }
 }
 
-export async function test_run () {
-    const wsProvider = new WsProvider("wss://fullnode-archive.centrifuge.io");
-    const api = await ApiPromise.create({
-        provider: wsProvider,
-        types: {
-            ProxyType: {
-                _enum: ['Any', 'NonTransfer', 'Governance', 'Staking', 'Vesting']
-            }
-        }
-    });
-
-    const keyring = new Keyring({type: 'sr25519'});
-    let alice = keyring.addFromUri('//Alice');
-    let failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
-
-    const { nonce } = await api.query.system.account(alice.address);
-
-    const cbErr = (xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>) => {
-        for(const xt of xts) {
-            console.log(xt.toHuman());
-        }
-    }
-
-    let dispatcher = new Dispatcher(api, alice, nonce.toBigInt(), cbErr, 10, 100);
-
-    for (let i = 0; i < 100; i++) {
-        let send = async function sending(){
-            const nonce = await dispatcher.nextNonce();
-
-            await sendingInternal(dispatcher, i, nonce)
-                .catch(async (err) => {
-                    console.log(err);
-                    await dispatcher.returnNonce(nonce).catch((err) => {console.log(err)});
-                });
-        };
-
-        await send();
-    }
-
-    api.disconnect();
-}
+// export async function test_run () {
+//     const wsProvider = new WsProvider("wss://fullnode-archive.centrifuge.io");
+//     const api = await ApiPromise.create({
+//         provider: wsProvider,
+//         types: {
+//             ProxyType: {
+//                 _enum: ['Any', 'NonTransfer', 'Governance', 'Staking', 'Vesting']
+//             }
+//         }
+//     });
+//
+//     const keyring = new Keyring({type: 'sr25519'});
+//     let alice = keyring.addFromUri('//Alice');
+//     let failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
+//
+//     const { nonce } = await api.query.system.account(alice.address);
+//
+//     const cbErr = (xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>) => {
+//         for(const xt of xts) {
+//             console.log(xt.toHuman());
+//         }
+//     }
+//
+//     let dispatcher = new Dispatcher(api, alice, nonce.toBigInt(), cbErr, 10, 100);
+//
+//     for (let i = 0; i < 100; i++) {
+//         let send = async function sending(){
+//             const nonce = await dispatcher.nextNonce();
+//
+//             await sendingInternal(dispatcher, i, nonce)
+//                 .catch(async (err) => {
+//                     console.log(err);
+//                     await dispatcher.returnNonce(nonce).catch((err) => {console.log(err)});
+//                 });
+//         };
+//
+//         await send();
+//     }
+//
+//     api.disconnect();
+// }
 
 async function sendingInternal(dispatcher: Dispatcher, anynumber: number, nonce: bigint): Promise<bigint>{
     if (anynumber % 2 === 0) {

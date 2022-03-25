@@ -8,6 +8,7 @@ import ownKeys = Reflect.ownKeys;
 import {Configuration} from "ts-postgres";
 import {encodeAddress} from "@polkadot/keyring";
 import {Logger} from "@centrifuge-cli/core/dist/logger";
+import '@polkadot/api-augment'
 
 const axios = require('axios').default;
 

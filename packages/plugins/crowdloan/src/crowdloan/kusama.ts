@@ -7,6 +7,7 @@ import {BIT_SIGNED} from "@polkadot/types/extrinsic/constants";
 import ownKeys = Reflect.ownKeys;
 import {Configuration} from "ts-postgres";
 import {encodeAddress} from "@polkadot/keyring";
+import '@polkadot/api-augment'
 
 const axios = require('axios').default;
 
