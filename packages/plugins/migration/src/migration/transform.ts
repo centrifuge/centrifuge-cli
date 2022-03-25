@@ -3,7 +3,6 @@ import { xxhashAsHex } from "@polkadot/util-crypto";
 import { AccountInfo, Balance, Hash, ProxyDefinition } from "@polkadot/types/interfaces";
 import { insertOrNewMap, StorageItem, StorageValueValue, StorageMapValue } from "../migration/common";
 import { StorageKey } from "@polkadot/types";
-import { compactAddLength } from "@polkadot/util";
 
 export async function transform(
     forkData: Map<string, Array<[StorageKey, Uint8Array]>>,
@@ -152,7 +151,12 @@ async function transformSystem(fromApi: ApiPromise, toApi: ApiPromise, keyValues
 }
 
 async function transformSystemAccount(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldAccountInfo: Uint8Array): Promise<StorageItem> {
-    let oldAccountInfo = fromApi.createType("AccountInfo", scaleOldAccountInfo);
+    let oldAccountInfo: AccountInfo = fromApi.createType("AccountInfo", scaleOldAccountInfo);
+
+    // Print warning if balance is reserved - we should take that into account
+    if (oldAccountInfo.data.reserved.toBigInt() > 0) {
+        console.log("!!!!! Warning: Reserved balance of account an account. Amount: " + oldAccountInfo.data.reserved.toBigInt());
+    }
 
     let newAccountInfo = await toApi.createType("AccountInfo", [
         0, // nonce
@@ -206,7 +210,6 @@ async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValue
     const atToAsNumber = (await toApi.rpc.chain.getBlock(atTo)).block.header.number.toBigInt();
     const atFromAsNumber = (await fromApi.rpc.chain.getBlock(atFrom)).block.header.number.toBigInt();
 
-
     for (let [patriciaKey, value] of keyValues) {
         if (patriciaKey.toHex().startsWith(xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2);
@@ -221,25 +224,31 @@ async function transformVesting(fromApi: ApiPromise, toApi: ApiPromise, keyValue
 }
 
 async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleOldVestingInfo: Uint8Array, atFrom: bigint, atTo: bigint): Promise<StorageItem> {
-    let old = fromApi.createType("VestingInfo", scaleOldVestingInfo);
+    let old = fromApi.createType("Option<VestingInfo>", scaleOldVestingInfo).unwrapOrDefault();
 
     let remainingLocked;
     let newPerBlock;
     let newStartingBlock;
 
+    // Details:
+    // * (locked/per_block): Number blocks on mainnet overall
+    // * snapshot_block - starting_block: Number of vested blocks
+    // * subtraction of the above two: How many blocks remain
     const blockPeriodOldVesting = (old.locked.toBigInt() / old.perBlock.toBigInt());
     const blocksPassedSinceVestingStart = (atFrom - old.startingBlock.toBigInt());
 
+    // This defines the remaining blocks one must wait until his
+    // vesting is over.
+    const remainingBlocks = (blockPeriodOldVesting - blocksPassedSinceVestingStart)
+    // Give the vesting time some head start, as atTo is the block right at migration start.
+    // 5 blocks = 1 minute
+    // 300 block = 1 hour
+    const headStartBlocks = BigInt(0);
+
     // We need to check if vesting is ongoing, is finished or has not yet started, as conversion will be different.
-    if (blocksPassedSinceVestingStart > 0 && (blockPeriodOldVesting - blocksPassedSinceVestingStart) > 0) {
-        // This defines the remaining blocks one must wait until his
-        // vesting is over.
-        //
-        // Details:
-        // * (locked/per_block): Number blocks on mainnet overall
-        // * snapshot_block - starting_block: Number of vested blocks
-        // * subtraction of the above two: How many blocks remain
-        let remainingBlocks = (blockPeriodOldVesting - blocksPassedSinceVestingStart);
+    if (blocksPassedSinceVestingStart > 0 && remainingBlocks > 0) {
+        // Vesting is ongoing
+
         // This defines the remaining locked amount. Same as if a person has called vest once at the snapshot block.
         remainingLocked = old.locked.toBigInt() - (blocksPassedSinceVestingStart * old.perBlock.toBigInt());
         // Ensure remaining locked is greater zero
@@ -253,19 +262,20 @@ async function transformVestingVestingInfo(fromApi: ApiPromise, toApi: ApiPromis
             const info = toApi.createType("VestingInfo", [remainingLocked, newPerBlock, atTo]);
             throw Error("Invalid vesting schedule. \nStorageKey: " + completeKey.toHex() + "\n VestingInfo: " + info.toHuman());
         }
-        newStartingBlock = atTo;
+        newStartingBlock = atTo + headStartBlocks;
 
-    } else if ((blockPeriodOldVesting - blocksPassedSinceVestingStart) <= 0) {
+    } else if (remainingBlocks <= 0) {
         // If vesting is finished -> use same start block and give everything at first block
         remainingLocked = old.locked.toBigInt();
         newPerBlock = old.locked.toBigInt();
-        newStartingBlock = atTo;
+        newStartingBlock = atTo + headStartBlocks;
 
-    } else if ((old.startingBlock.toBigInt() - atFrom) >= 0) {
-        // If vesting has not started yes -> use starting block as (old - blocks_passed_on_old_mainnet).
+    } else if (blocksPassedSinceVestingStart <= 0) {
+        // If vesting has not started yes -> use starting block as (old - blocks_passed_on_old_mainnet),
+        // as blocks_passed_on_old_mainnet is smaller than 0, resulting in an effective increase.
         remainingLocked = old.locked.toBigInt();
         newPerBlock = old.perBlock.toBigInt();
-        newStartingBlock = old.startingBlock.toBigInt() - atFrom + atTo;
+        newStartingBlock = atTo - blocksPassedSinceVestingStart + headStartBlocks;
 
     } else {
         throw Error("Unreachable code... Came here with old vesting info of: " + old.toHuman());
