@@ -17,3 +17,10 @@ yarn install
 lerna run build
 ```
 
+## Run
+
+Once the project has been built, you can choose to run it like so:
+
+```bash
+node packages/cli/bin/run <subcommand>
+```
