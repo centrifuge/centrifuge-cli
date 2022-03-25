@@ -277,13 +277,13 @@ async function verifyVestingVesting(
                 const blockPeriodNewVesting = newVestingInfo.locked.toBigInt() / newVestingInfo.perBlock.toBigInt();
                 const blocksPassedSinceVestingStartNew = (atTo - newVestingInfo.startingBlock.toBigInt());
                 const remainingBlocksVestingNew = blockPeriodNewVesting - blocksPassedSinceVestingStartNew;
-                const nullOrOne = remainingBlocksVestingOld - (remainingBlocksVestingNew * BigInt(2));
+                const nullOrOne = remainingBlocksVestingOld - remainingBlocksVestingNew;
 
                 // Due to the arithmetics we accept if a vesting is off by 2 blocks in each direction.
                 if (!(BigInt(-2) <= nullOrOne && nullOrOne <= BigInt(2))) {
                     let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
                     let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
-                    console.log("ERROR: Remaining blocks for vesting are not equal...\n   Old: " + remainingBlocksVestingOld + " vs. New: " + remainingBlocksVestingNew * BigInt(2) + "\n    for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
+                    console.log("ERROR: Remaining blocks for vesting are not equal...\n   Old: " + remainingBlocksVestingOld + " vs. New: " + remainingBlocksVestingNew + "\n    for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
                     failed.push([key, value]);
                 }
 
