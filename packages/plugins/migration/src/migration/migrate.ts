@@ -1,7 +1,15 @@
 import {ApiPromise, SubmittableResult} from "@polkadot/api";
 import { xxhashAsHex} from "@polkadot/util-crypto";
 import {AccountId, Balance, Hash, VestingInfo} from "@polkadot/types/interfaces";
-import {StorageItemElement, PalletElement, StorageElement, StorageItem, StorageValueValue, StorageMapValue} from "../migration/common";
+import {
+    StorageItemElement,
+    PalletElement,
+    StorageElement,
+    StorageItem,
+    StorageValueValue,
+    StorageMapValue,
+    getOrInsertMap
+} from "../migration/common";
 import {ApiTypes, SubmittableExtrinsic} from "@polkadot/api/types";
 import {KeyringPair} from "@polkadot/keyring/types";
 import {StorageKey} from "@polkadot/types";
@@ -78,8 +86,8 @@ async function verifyClaimsClaimedAmounts(
         map.set(accountId.toHex(), data);
         return map;
     }, new Map<string, Uint8Array>());
-
     let checked = 0;
+
     for(let [sourceKey, sourceClaimedAmount] of oldData) {
         process.stdout.write("    Verifying:    "+ checked +"/ \r");
         let account = newApi.createType("AccountId", sourceKey.toU8a(true).slice(-32)).toHex();
@@ -101,6 +109,7 @@ async function verifyClaimsClaimedAmounts(
             console.log("ERROR Claims.ClaimedAmounts: New claimed amount for account " + sourceKey.toHex() + " not found in the destination chain...");
             failed.push([sourceKey, sourceClaimedAmount]);
         }
+
         checked += 1;
     }
 
@@ -394,21 +403,23 @@ export async function buildExtrinsics(
     for (let [prefix, keyValues] of Array.from(destData)) {
         // Match all prefixes we want to transform
         if (prefix.startsWith(xxhashAsHex("System", 128))) {
-            let migratedPalletStorageItems = await prepareSystem(toApi, keyValues);
-            extrinsics.set(prefix, migratedPalletStorageItems)
+            let palletItems = getOrInsertMap(extrinsics, prefix);
+            await prepareSystem(toApi, palletItems, keyValues);
 
         } else if (prefix.startsWith(xxhashAsHex("Balances", 128))) {
-            let migratedPalletStorageItems = await prepareBalances(toApi, keyValues);
-            extrinsics.set(prefix, migratedPalletStorageItems)
+            let palletItems = getOrInsertMap(extrinsics, prefix);
+            await prepareBalances(toApi, palletItems, keyValues);
 
         } else if (prefix.startsWith(xxhashAsHex("Vesting", 128))) {
-            let migratedPalletStorageItems = await prepareVesting(toApi, keyValues);
-            extrinsics.set(prefix, migratedPalletStorageItems)
+            let palletItems = getOrInsertMap(extrinsics, prefix);
+            await prepareVesting(toApi, palletItems, keyValues);
 
         } else if (prefix.startsWith(xxhashAsHex("Proxy", 128))) {
-            let migratedPalletStorageItems = await prepareProxy(toApi, keyValues);
-            extrinsics.set(prefix, migratedPalletStorageItems)
-
+            let palletItems = getOrInsertMap(extrinsics, prefix);
+            await prepareProxy(toApi, palletItems, keyValues);
+        } else if (prefix.startsWith(xxhashAsHex("Claims", 128))) {
+            let palletItems = getOrInsertMap(extrinsics, prefix);
+            await prepareClaims(toApi, palletItems, keyValues);
         } else {
             return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + prefix);
         }
@@ -459,13 +470,129 @@ export async function migrate(
     return await dispatcher.getResults();
 }
 
+async function prepareClaims(
+    toApi: ApiPromise,
+    xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>,
+    keyValues: Map<string, Array<StorageItem>>
+) {
+    // Match against the actual storage items of a pallet.
+    for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
+        if (palletStorageItemKey === (xxhashAsHex("Claims", 128) + xxhashAsHex("ClaimedAmounts", 128).slice(2))) {
+            xts.set(palletStorageItemKey, await prepareClaimsClaimedAmounts(toApi, values));
+
+        } else if (palletStorageItemKey === (xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2))) {
+            xts.set(palletStorageItemKey, await prepareClaimsRootHashes(toApi, values));
+
+        } else if (palletStorageItemKey === (xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2))) {
+            xts.set(palletStorageItemKey, await prepareClaimsUploadAccount(toApi, values));
+
+        } else {
+            return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
+        }
+    }
+}
+
+async function prepareClaimsClaimedAmounts(
+    toApi: ApiPromise,
+    values: StorageItem[]
+): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
+    let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
+    let packetOfKeyValues = new Array();
+    let maxKeyValues = 20;
+
+    let counter = 0;
+    for (const item of values) {
+        counter += 1;
+        if (item instanceof StorageMapValue) {
+            let key = Array.from(item.patriciaKey.toU8a(true));
+            let value = Array.from(item.value);
+            let keyValue = toApi.createType("(Vec<u8>, Vec<u8>)", [key, value]);
+
+            if (packetOfKeyValues.length === maxKeyValues - 1  || counter === values.length) {
+                // Push last element to the array
+                packetOfKeyValues.push(keyValue);
+
+                let packetOfkeyValues = toApi.createType("Vec<(Vec<u8>, Vec<u8>)>", packetOfKeyValues)
+                xts.push(toApi.tx.system.setStorage(packetOfkeyValues));
+
+                packetOfKeyValues = new Array();
+            } else {
+                packetOfKeyValues.push(keyValue);
+            }
+        } else {
+            return Promise.reject("Expected Claims.ClaimedAmounts storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
+        }
+    }
+
+    return xts;
+}
+
+async function prepareClaimsRootHashes(
+    toApi: ApiPromise,
+    values: StorageItem[]
+): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
+    let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
+    let packetOfKeyValues = new Array();
+    let maxKeyValues = 20;
+
+    let counter = 0;
+    for (const item of values) {
+        counter += 1;
+        if (item instanceof StorageMapValue) {
+            let key = Array.from(item.patriciaKey.toU8a(true));
+            let value = Array.from(item.value);
+            let keyValue = toApi.createType("(Vec<u8>, Vec<u8>)", [key, value]);
+
+            if (packetOfKeyValues.length === maxKeyValues - 1  || counter === values.length) {
+                // Push last element to the array
+                packetOfKeyValues.push(keyValue);
+
+                let packetOfkeyValues = toApi.createType("Vec<(Vec<u8>, Vec<u8>)>", packetOfKeyValues)
+                xts.push(toApi.tx.system.setStorage(packetOfkeyValues));
+
+                packetOfKeyValues = new Array();
+            } else {
+                packetOfKeyValues.push(keyValue);
+            }
+        } else {
+            return Promise.reject("Expected Claims.RootHashes storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
+        }
+    }
+
+    return xts;
+}
+
+async function prepareClaimsUploadAccount(
+    toApi: ApiPromise,
+    values: StorageItem[]
+): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
+    let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
+
+    let counter = 0;
+    for (const item of values) {
+        if (counter > 0) {
+            return Promise.reject("Expected Claims.UpdloadAccount to be a single storage value. Got multiple.");
+        }
+
+        counter += 1;
+        if (item instanceof StorageValueValue) {
+            let key = Array.from(toApi.createType("StorageKey", xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2)).toU8a(true));
+            let value = Array.from(item.value);
+            let keyValue = toApi.createType("Vec<(Vec<u8>, Vec<u8>)>", [[key, value]])
+            xts.push(toApi.tx.system.setStorage(keyValue));
+        } else {
+            return Promise.reject("Expected Claims.UpdloadAccount storage values to be of type StorageValueValue. Got: " + JSON.stringify(item));
+        }
+    }
+
+    return xts;
+}
 
 async function prepareSystem(
     toApi: ApiPromise,
+    xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
-    let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
-
+){
     // Match against the actual storage items of a pallet.
     for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === (xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2))) {
@@ -475,16 +602,13 @@ async function prepareSystem(
             return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
-
-    return xts;
 }
 
 async function prepareProxy(
     toApi: ApiPromise,
+    xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
-    let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
-
+) {
     // Match against the actual storage items of a pallet.
     for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === (xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2))) {
@@ -494,8 +618,6 @@ async function prepareProxy(
             return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
-
-    return xts;
 }
 
 async function prepareProxyProxies(
@@ -588,10 +710,9 @@ async function retrieveIdAndAccount(item: StorageMapValue): Promise<[ Uint8Array
 
 async function prepareBalances(
     toApi: ApiPromise,
+    xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
-    let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
-
+) {
     for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)) {
             xts.set(palletStorageItemKey, await prepareBalancesTotalIssuance(toApi, values));
@@ -599,8 +720,6 @@ async function prepareBalances(
             return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
-
-    return xts;
 }
 
 async function prepareBalancesTotalIssuance(
@@ -628,10 +747,9 @@ async function prepareBalancesTotalIssuance(
 
 async function prepareVesting(
     toApi: ApiPromise,
+    xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>,
     keyValues: Map<string, Array<StorageItem>>
-):  Promise<Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> {
-    let xts: Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Map();
-
+) {
     for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2)) {
             xts.set(palletStorageItemKey, await prepareVestingVestingInfo(toApi, values));
@@ -640,8 +758,6 @@ async function prepareVesting(
             return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + palletStorageItemKey);
         }
     }
-
-    return xts;
 }
 
 async function prepareVestingVestingInfo(
