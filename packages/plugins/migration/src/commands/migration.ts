@@ -315,11 +315,7 @@ export default class Migration extends CliBaseCommand {
         }
     }
 
-    async checkAvailability(elements: Array<StorageElement>): Promise<Array<StorageElement>> {
-        // TODO: Check if migration is possible with elements. In our case it is...
-        return elements;
-    }
-
+    // Transform the `Config modules` into an array of storage elements
     async createStorageElements(): Promise<Array<StorageElement>> {
         const toBeMigrated = this.migrationConfig.modules;
         let storageElements: Array<StorageElement> = new Array();
@@ -332,7 +328,7 @@ export default class Migration extends CliBaseCommand {
             }
         }
 
-        return this.checkAvailability(storageElements);
+        return storageElements;
     }
 
     async createSequenceElements(): Promise<Array<StorageElement>> {
