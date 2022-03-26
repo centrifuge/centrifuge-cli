@@ -5,6 +5,7 @@ import { insertOrNewMap, StorageItem, StorageValueValue, StorageMapValue } from 
 import {StorageKey} from "@polkadot/types";
 import {compactAddLength} from "@polkadot/util";
 
+// Transform the source state to match the appropriate schema in the destination
 export async function transform(
     forkData: Map<string, Array<[ StorageKey, Uint8Array]>>,
     fromApi: ApiPromise,

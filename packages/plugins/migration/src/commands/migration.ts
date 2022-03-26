@@ -3,7 +3,7 @@ import {flags} from '@oclif/command'
 import {ApiPromise, Keyring, SubmittableResult, WsProvider} from "@polkadot/api";
 import {Hash} from "@polkadot/types/interfaces";
 import * as fs from 'fs';
-import {StorageItemElement, PalletElement, StorageElement, StorageItem} from "../migration/common";
+import {StorageItem} from "../migration/common";
 import {transform,} from "../migration/transform";
 import {ApiTypes, SubmittableExtrinsic} from "@polkadot/api/types";
 import {KeyringPair} from "@polkadot/keyring/types";
@@ -12,9 +12,12 @@ import {fork} from "../migration/fork";
 import {IConfig} from "@oclif/config";
 import {cryptoWaitReady} from "@polkadot/util-crypto"
 import {CliBaseCommand} from "@centrifuge-cli/core";
-import {Config, Credentials, MigrationStats} from "../migration/interfaces";
-import {prepareMigrate, migrate, verifyMigration} from "../migration/migrate";
-
+import {buildExtrinsics, migrate, verifyMigration} from "../migration/migrate";
+import {
+    Credentials,
+    Migrations,
+    MigrationSummary, toStorageElement
+} from "../migration/interfaces";
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
@@ -23,15 +26,15 @@ export default class Migration extends CliBaseCommand {
     toApi!: ApiPromise;
 
     // The keypair that executes the migration
-    exec!: KeyringPair
+    keyPair!: KeyringPair
 
-    migrationConfig!: Config
+    migrations!: Migrations
 
     static description = 'Centrifuge cli command that allows to migrate from a stand-alone to a parachain.'
 
     static examples = [
         `$ crowdloan --source-network wss://rpc.polkadot.io --destnation-network wss://portal.chain.centrifuge.io ` +
-        `--exec SOME_PATH_TO_JSON_OF_ACCOUNT --config SOME_PATH_TO_JSON_CONFIG` ,
+        `--keyPair SOME_PATH_TO_JSON_OF_ACCOUNT --config SOME_PATH_TO_JSON_CONFIG` ,
     ]
 
     static args = [
@@ -69,7 +72,7 @@ export default class Migration extends CliBaseCommand {
             exclusive: ['dry-run']
         }),
         'just-verify': flags.string({
-            description: 'Just verifies a given migration. Must provide a path to a JSON containing a MigrationStats object',
+            description: 'Just verifies a given migration. Must provide a path to a JSON containing a MigrationSummary object',
             exclusive: ['verify', 'dry-run']
         })
     };
@@ -110,16 +113,15 @@ export default class Migration extends CliBaseCommand {
                 }
             });
 
-
-            // Get latest block from standalone chain
+            // Get the latest block from the source chain
             const startFrom = (await this.fromApi.rpc.chain.getHeader()).hash
             this.logger.info("Starting migration from stand-alone chain block with hash " + startFrom);
             let atFrom = startFrom;
 
             if (flags["from-block"] != '-1') {
                 atFrom = await this.fromApi.rpc.chain.getBlockHash(flags["from-block"]);
-                // Check if this really results in a block. This can fail. Hence, we will fail here
                 this.logger.info("Fetching storage from stand-alone chain block with hash " + atFrom);
+                // Ensure that this block actually exists in the source chain
                 try {
                     await this.fromApi.rpc.chain.getBlock(atFrom);
                 } catch (err) {
@@ -130,26 +132,32 @@ export default class Migration extends CliBaseCommand {
 
             const atTo = (await this.toApi.rpc.chain.getHeader()).hash;
             this.logger.info("Starting migration from parachain block with hash "  + atTo);
-            let endTo: Hash; // This will be used later for the stats
-            const storageToFetch = await this.createStorageElements();
+            // This will be used later for the summary
+            let endTo: Hash;
+            // The source and destination storage elements.
+            const storageToFetch = this.migrations.map(m => toStorageElement(m.source));
 
             if (flags['just-verify'] === undefined) {
-                // Fork the data
-                const state = await fork(this.fromApi, storageToFetch, atFrom);
-
-                // Transform the data
-                const transformedState: Map<string, Map<string, Array<StorageItem>>> = await transform(state, this.fromApi, this.toApi, startFrom, atFrom, atTo);
-
-                // Prepare migration. I.e. generate the extrinsics to be executed
-                const migrationExtrinsics = await prepareMigrate(transformedState, this.fromApi, this.toApi);
+                // A copy of the source storage state we are interested in
+                const sourceState = await fork(this.fromApi, storageToFetch, atFrom);
+                // Transform the source state to match the appropriate schema in the destination
+                const transformedState: Map<string, Map<string, Array<StorageItem>>>
+                    = await transform(sourceState, this.fromApi, this.toApi, startFrom, atFrom, atTo);
+                const extrinsics = await buildExtrinsics(transformedState, this.fromApi, this.toApi);
 
                 // Execute migration
                 if (!flags['dry-run']) {
-                    const sequence = await this.createSequenceElements()
-                    const failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
-                    const executedExts: Array<[Hash, bigint]> = await migrate(this.toApi, this.exec, sequence, migrationExtrinsics, (failedExts) => {
-                        failed.push(...failedExts);
-                    });
+                    const failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = [];
+                    const destinationStorageElements
+                        = this.migrations.map(m => toStorageElement(m.destination));
+
+                    const executedExtrinsics: Array<[Hash, bigint]>
+                        = await migrate(
+                            extrinsics,
+                            destinationStorageElements,
+                            this.toApi, this.keyPair,
+                        (failedExts) => { failed.push(...failedExts)}
+                        );
 
                     if (failed.length != 0) {
                         let msg = ''
@@ -172,7 +180,7 @@ export default class Migration extends CliBaseCommand {
                     {
                         let msg = '';
                         let counter = 0
-                        for (const xt of executedExts) {
+                        for (const xt of executedExtrinsics) {
                             if (counter !== failed.length) {
                                 msg += ("    Block-hash: " + xt[0].toHex() + " and index: " + xt[1].toString() + "\n");
                             } else {
@@ -184,8 +192,8 @@ export default class Migration extends CliBaseCommand {
                     }
 
                     endTo = (await this.toApi.rpc.chain.getHeader()).hash;
-                    this.logger.info("Ending migration on parachain block with hash " + endTo);
-                    await this.createSummary(startFrom, atFrom, atTo, endTo, sequence);
+                    this.logger.info("Ending migration on destination chain at block with hash " + endTo);
+                    await this.writeSummary(this.migrations, startFrom, atFrom, atTo, endTo);
                 }
             }
 
@@ -196,19 +204,20 @@ export default class Migration extends CliBaseCommand {
                 let atFromHash: Hash;
                 let atToHash: Hash;
                 let endToHash: Hash;
-                if(flags['just-verify'] === undefined){
+
+                if(flags['just-verify'] === undefined) {
                     startFromHash = startFrom;
                     atFromHash = atFrom;
                     atToHash = atTo;
                     // @ts-ignore // This is fine as flags ensure this.
                     endToHash = endTo;
                 } else {
-                    const stats: MigrationStats = await this.parseSummary(flags['just-verify']);
+                    const summary: MigrationSummary = await this.parseSummary(flags['just-verify']);
 
-                    startFromHash = await this.fromApi.rpc.chain.getBlockHash(stats.fromStartedAt);
-                    atFromHash = await this.fromApi.rpc.chain.getBlockHash(stats.fromFetchedAt);
-                    atToHash = await this.toApi.rpc.chain.getBlockHash(stats.toStartedAt);
-                    endToHash = await this.toApi.rpc.chain.getBlockHash(stats.toEndAt);
+                    startFromHash = await this.fromApi.rpc.chain.getBlockHash(summary.fromStartedAt);
+                    atFromHash = await this.fromApi.rpc.chain.getBlockHash(summary.fromFetchedAt);
+                    atToHash = await this.toApi.rpc.chain.getBlockHash(summary.toStartedAt);
+                    endToHash = await this.toApi.rpc.chain.getBlockHash(summary.toEndAt);
 
                     // Check if we can actually get a block
                     await this.fromApi.rpc.chain.getBlock(startFromHash);
@@ -220,13 +229,27 @@ export default class Migration extends CliBaseCommand {
                     await this.toApi.rpc.chain.getBlock(endToHash);
                 }
 
-                // Verify
+                // Verify the migration
                 const inconsistentStorage: Array<[StorageKey, number[] | Uint8Array]>
-                    = await verifyMigration(this.toApi, this.fromApi, storageToFetch, atToHash, endToHash, startFromHash, atFromHash);
+                    = await verifyMigration(
+                        this.migrations,
+                    {
+                                api: this.fromApi,
+                                startBlock: startFromHash,
+                                endBlock: atFromHash,
+                            },
+                    {
+                        api: this.toApi,
+                        startBlock: atToHash,
+                        endBlock: endToHash,
+                    },
+                );
 
-                if(inconsistentStorage.length === 0) {
-                    this.logger.info("Migration has been verified.");
+                if (inconsistentStorage.length === 0) {
+                    this.logger.info("Migration has been verified successfully");
                 } else {
+                    this.logger.info("Migration failed; we found the following number of inconsistencies:", inconsistentStorage.length);
+
                     let msg = '';
                     let counter = 0;
                     for (const [key, value] of inconsistentStorage) {
@@ -237,116 +260,79 @@ export default class Migration extends CliBaseCommand {
                         }
                     }
 
-                    this.logger.fatal("Failed to verify all migrated storage elements. Failures are (values refer to storage from old-chain): \n" + msg);
+                    this.logger.fatal("Failed to verify all migrated storage elements. Failures are (values refer to the source's storage): \n" + msg);
                 }
             }
 
-            this.fromApi.disconnect();
-            this.toApi.disconnect()
+            await this.fromApi.disconnect();
+            await this.toApi.disconnect()
         } catch (err) {
             this.logger.error(err);
 
             try {
-                this.fromApi.disconnect();
-                this.toApi.disconnect()
+                await this.fromApi.disconnect();
+                await this.toApi.disconnect()
             } catch(err) {
                 this.exit(2);
             }
             this.exit(2);
         }
-
     }
 
-    async createSummary(startBlockFrom: Hash, stateTakenBlockFrom: Hash, startBlockTo: Hash, endBlockTo: Hash, sequence: Array<StorageElement>) {
-        let modules = new Array();
-        for(const elem of sequence) {
-            if (elem instanceof StorageItemElement) {
-                modules.push({name: elem.pallet, item: elem.item});
-            } else {
-                return Promise.reject("Sequence must be of type StorageItemElement");
-            }
-        }
+    // Write the migration summary to disk
+    async writeSummary(migrations: Migrations, startBlockFrom: Hash, stateTakenBlockFrom: Hash, startBlockTo: Hash, endBlockTo: Hash) {
+        console.log("NUNO: will write summary of migration");
 
-        let stats: MigrationStats = {
-            modules: modules,
+        let summary: MigrationSummary = {
             fromStartedAt: (await this.fromApi.rpc.chain.getBlock(startBlockFrom)).block.header.number.toBigInt(),
             fromFetchedAt: (await this.fromApi.rpc.chain.getBlock(stateTakenBlockFrom)).block.header.number.toBigInt(),
             toStartedAt: (await this.toApi.rpc.chain.getBlock(startBlockTo)).block.header.number.toBigInt(),
             toEndAt: (await this.toApi.rpc.chain.getBlock(endBlockTo)).block.header.number.toBigInt(),
-
         }
 
+        console.log("NUNO: try write to disk");
+
+
         try {
-            this.logger.debug("Summary of migration: \n   "  + JSONbig.stringify(stats));
-            this.writeFile( JSONbig.stringify(stats), "Migration-Stats-" + Date.now() + ".json", "Summaries");
+            console.log("Summary of migration: \n   "  + JSONbig.stringify(summary));
+            this.writeFile( JSONbig.stringify(summary), "Migration-Stats-" + Date.now() + ".json", "~/Summaries");
         } catch (err) {
-            this.logger.info("Summary of migration: \n   "  + JSONbig.stringify(stats));
+            this.logger.info("Failed to write the migration summary to disk");
         }
     }
 
-    async parseSummary(filePath: string): Promise<MigrationStats> {
+    async parseSummary(filePath: string): Promise<MigrationSummary> {
         try {
             let file = fs.readFileSync(filePath);
-            const stats: MigrationStats = JSONbig.parse(file.toString());
+            const summary: MigrationSummary = JSONbig.parse(file.toString());
 
-             if (stats.toEndAt === undefined) {
-                 return Promise.reject("Missing 'toEndAt' in MigrationStats")
-
+             if (summary.toEndAt === undefined) {
+                 return Promise.reject("Missing 'toEndAt' in MigrationSummary")
              }
-            if (stats.fromFetchedAt === undefined) {
-                return Promise.reject("Missing 'fromFetchedAt' in MigrationStats")
 
-            }
-            if (stats.fromStartedAt === undefined) {
-                return Promise.reject("Missing 'fromStartedAt' in MigrationStats")
-
-            }
-            if (stats.toStartedAt === undefined) {
-                return Promise.reject("Missing 'toStartedAt' in MigrationStats")
-
-            }
-            if (stats.modules === undefined) {
-                return Promise.reject("Missing 'modules' in MigrationStats")
+            if (summary.fromFetchedAt === undefined) {
+                return Promise.reject("Missing 'fromFetchedAt' in MigrationSummary")
             }
 
-            return stats;
+            if (summary.fromStartedAt === undefined) {
+                return Promise.reject("Missing 'fromStartedAt' in MigrationSummary")
+
+            }
+            if (summary.toStartedAt === undefined) {
+                return Promise.reject("Missing 'toStartedAt' in MigrationSummary")
+
+            }
+
+            return summary;
         } catch (err) {
             return Promise.reject(err);
         }
     }
 
-    // Transform the `Config modules` into an array of storage elements
-    async createStorageElements(): Promise<Array<StorageElement>> {
-        const toBeMigrated = this.migrationConfig.modules;
-        let storageElements: Array<StorageElement> = new Array();
-
-        for (const pallet of toBeMigrated){
-            if (pallet.item === undefined) {
-                storageElements.push(new PalletElement(pallet.name));
-            } else {
-                storageElements.push(new StorageItemElement(pallet.name, pallet.item.name));
-            }
-        }
-
-        return storageElements;
-    }
-
-    async createSequenceElements(): Promise<Array<StorageElement>> {
-        const toBeMigrated = this.migrationConfig.sequence;
-        let storageElements: Array<StorageElement> = new Array();
-
-        for (const pallet of toBeMigrated){
-            storageElements.push(new StorageItemElement(pallet.name, pallet.item));
-        }
-
-        return storageElements;
-
-    }
-
     async parseConfig(filePath: string) {
         try {
             let file = fs.readFileSync(filePath);
-            this.migrationConfig = JSONbig.parse(file.toString());
+            this.migrations = JSONbig.parse(file.toString());
         } catch (err) {
             return Promise.reject(err);
         }
@@ -365,8 +351,7 @@ export default class Migration extends CliBaseCommand {
                  if(!await cryptoWaitReady()) {
                      return Promise.reject("Could not initilaize WASM environment for crypto. Aborting!");
                  }
-                const execPair = keyring.addFromUri(credentials.rawSeed);
-                this.exec = execPair;
+                this.keyPair = keyring.addFromUri(credentials.rawSeed);
             }
         } catch (err) {
             return Promise.reject(err);

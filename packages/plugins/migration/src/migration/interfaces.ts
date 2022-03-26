@@ -1,35 +1,18 @@
+import {PalletElement, StorageElement, StorageItemElement} from "./common";
+
 export interface Credentials {
     rawSeed: string
 }
 
-export interface Config {
-    modules: Array<ModuleConfig>,
-    sequence: Array<SequenceConfig>,
-}
+// All migrations to be executed in the exact order defined in the array.
+export type Migrations = Array<Migration>;
 
-export interface ModuleConfig {
-    // The pallet name
-    name: string,
-    // The pallet's item name if applicable
-    item: StorageItemConfig | undefined,
-}
-
-export interface SequenceConfig {
-    name: string,
-    item: string,
-}
-
-// ---------- New stuff
-
+// A migration, i.e, a type capturing the migratable item in the source and in the destination chain.
+// For example, { source: (RadClaims, AccountBalances), destination: (Claims, ClaimedAmounts) }.
 export interface Migration {
-    // The items to be migrated, sorted by the order the migration *must* take place.
-    items: Array<Item>
-}
-
-// A migration item, i.e, a type describing a Migratable from
-// the source chain and its destination.
-export interface Item {
+    // The migratable info on the source chain
     source: Migratable,
+    // The migratable info on the destination chain
     destination: Migratable
 }
 
@@ -37,25 +20,37 @@ export interface Item {
 export type Migratable = Pallet | PalletStorageItem;
 
 export interface Pallet {
-    name: string
+    type: MigratableType.Pallet;
+    name: string;
 }
 
+// A Pallet Storage item, e.g. `{ pallet: "Balances", name: "TotalIssuance" }`
 export interface PalletStorageItem {
+    type: MigratableType.PalletStorageItem;
     // The pallet this item is under
-    pallet: Pallet,
-    // the name of the storage item
-    name: string
+    pallet: string;
+    // The name of the storage item
+    name: string;
 }
 
-export interface StorageItemConfig {
-    name: string
+// The different Migratable variant types
+export enum MigratableType {
+    Pallet = "Pallet",
+    PalletStorageItem = "PalletStorageItem",
 }
 
-export interface MigrationStats {
+export function toStorageElement(m: Migratable): StorageElement {
+    switch (m.type) {
+        case MigratableType.Pallet:
+            return new PalletElement(m.name);
+        case MigratableType.PalletStorageItem:
+            return new StorageItemElement(m.pallet, m.name);
+    }
+}
+
+export interface MigrationSummary {
     fromFetchedAt: bigint,
     fromStartedAt: bigint,
     toStartedAt: bigint
     toEndAt: bigint,
-    //TODO(nuno): consider delete this field or make it `Migration`
-    modules: Array<SequenceConfig>,
 }

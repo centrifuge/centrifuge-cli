@@ -49,7 +49,7 @@ export abstract class StorageElement {
     }
 }
 
-export class PalletElement extends StorageElement{
+export class PalletElement extends StorageElement {
     readonly pallet: string
     readonly palletHash: string
 

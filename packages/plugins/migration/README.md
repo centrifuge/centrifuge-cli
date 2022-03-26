@@ -71,17 +71,11 @@ itself.
 * --verify : If flag is given, the migration will be verified directly afterwards.
 * --just-verify : This option expects a path to a json file of the following form in order to verify a past migration.
     ```json
-    export interface MigrationStats {
+    export interface MigrationSummary {
       fromFetchedAt: string,
       fromStartedAt: string,
       toStartedAt: string
       toEndAt: string,
-      modules: Array<SequenceConfig>,
-    }
-  
-    export interface SequenceConfig {
-      name: string,
-      item: string,
     }
     ```
   
