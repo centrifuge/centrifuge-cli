@@ -57,11 +57,6 @@ async function transformClaims (fromApi: ApiPromise, toApi: ApiPromise, state: M
         if (patriciaKey.toHex().startsWith(xxhashAsHex("RadClaims", 128) + xxhashAsHex("AccountBalances", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Claims", 128) + xxhashAsHex("ClaimedAmounts", 128).slice(2);
             await insertOrNewArray(state, pkStorageItem, await transformClaimsClaimedAmounts(fromApi, toApi, patriciaKey, value));
-
-        } else if (patriciaKey.toHex().startsWith(xxhashAsHex("RadClaims", 128) + xxhashAsHex("RootHashes", 128).slice(2))) {
-            let pkStorageItem = xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2);
-            await insertOrNewArray(state, pkStorageItem, await transformClaimsRootHashes(fromApi, toApi, patriciaKey, value));
-
         } else if (patriciaKey.toHex().startsWith(xxhashAsHex("RadClaims", 128) + xxhashAsHex("UploadAccount", 128).slice(2))) {
             let pkStorageItem = xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2);
             await insertOrNewArray(state, pkStorageItem, await transformClaimsUploadAccount(fromApi, toApi, patriciaKey, value));
@@ -79,16 +74,6 @@ async function transformClaimsClaimedAmounts(fromApi: ApiPromise, toApi: ApiProm
     let keyWithoutPrefix = completeKey.toHex().slice(66);
     let newKey = toApi.createType("StorageKey", newPrefix + keyWithoutPrefix);
     return new StorageMapValue(scaleClaimedAmountsUser, newKey);
-
-}
-
-async function transformClaimsRootHashes(fromApi: ApiPromise, toApi: ApiPromise, completeKey: StorageKey, scaleRootHashBool:  Uint8Array): Promise<StorageItem> {
-    // We need to update the pallet and the item hash prefixes of the key here
-    let newPrefix = xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2);
-    // First 64 characters plus 0x from hex representation
-    let keyWithoutPrefix = completeKey.toHex().slice(66);
-    let newKey = toApi.createType("StorageKey", newPrefix + keyWithoutPrefix);
-    return new StorageMapValue(scaleRootHashBool, newKey);
 
 }
 

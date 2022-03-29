@@ -75,27 +75,27 @@ export async function verifyMigration(
 }
 
 async function verifyClaimsClaimedAmounts(
-    oldData: Array<[StorageKey, Uint8Array]>,
-    oldApi: ApiPromise,
-    newData: Array<[StorageKey, Uint8Array]>,
-    newApi: ApiPromise
+    sourceData: Array<[StorageKey, Uint8Array]>,
+    sourceApi: ApiPromise,
+    destData: Array<[StorageKey, Uint8Array]>,
+    destApi: ApiPromise
 ): Promise<Array<[StorageKey, Uint8Array]>> {
     let failed = new Array();
-    let newDataMap = newData.reduce(function (map, [key, data]) {
-        let accountId = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+    let newDataMap = destData.reduce(function (map, [key, data]) {
+        let accountId = destApi.createType("AccountId", key.toU8a(true).slice(-32));
         map.set(accountId.toHex(), data);
         return map;
     }, new Map<string, Uint8Array>());
     let checked = 0;
 
-    for(let [sourceKey, sourceClaimedAmount] of oldData) {
+    for(let [sourceKey, sourceClaimedAmount] of sourceData) {
         process.stdout.write("    Verifying:    "+ checked +"/ \r");
-        let account = newApi.createType("AccountId", sourceKey.toU8a(true).slice(-32)).toHex();
+        let account = destApi.createType("AccountId", sourceKey.toU8a(true).slice(-32)).toHex();
         let destClaimedAmount = newDataMap.get(account);
 
         if (destClaimedAmount !== undefined) {
-            let sourceClaimedBalance = oldApi.createType('Balance', sourceClaimedAmount);
-            let destClaimedBalance = newApi.createType('Balance', destClaimedAmount);
+            let sourceClaimedBalance = sourceApi.createType('Balance', sourceClaimedAmount);
+            let destClaimedBalance = destApi.createType('Balance', destClaimedAmount);
 
             if (destClaimedBalance.toBigInt() !== sourceClaimedBalance.toBigInt()) {
                 console.log(
@@ -117,45 +117,28 @@ async function verifyClaimsClaimedAmounts(
 }
 
 async function verifyClaimsUploadAccount(
-    oldData: Array<[StorageKey, Uint8Array]>,
-    oldApi: ApiPromise,
-    newData: Array<[StorageKey, Uint8Array]>,
-    newApi: ApiPromise
+    sourceData: Array<[StorageKey, Uint8Array]>,
+    sourceApi: ApiPromise,
+    destData: Array<[StorageKey, Uint8Array]>,
+    destApi: ApiPromise
 ): Promise<Array<[StorageKey, Uint8Array]>> {
-    let failed = new Array();
+    // UploadAccount is a StorageValue, so we only need to handle the first and only element.
+    let [sourceKey, sourceAccountRaw] = sourceData[0];
+    let [_, destAccountRaw] = destData[0];
 
-    let newDataMap = newData.reduce(function (map, obj) {
-        map.set(obj[0].toHex(), obj[1]);
-        return map;
-    }, new Map<string, Uint8Array>());
+    let sourceAccount = sourceApi.createType('AccountId', sourceAccountRaw).toHex();
+    let destAccount = destApi.createType('AccountId', destAccountRaw).toHex();
 
-    let checked = 0;
-    for(let [key, value] of oldData) {
-        process.stdout.write("    Verifying:    "+ checked +"/ \r");
-
-        let oldAccount = oldApi.createType('AccountId', value);
-
-        let newScale = newDataMap.get(key.toHex());
-        if (newScale !== undefined) {
-            let newAccount = newApi.createType('AccountId', newScale);
-
-            if (oldAccount.toHex() !== newAccount.toHex()) {
-                console.log(
-                    "ERROR Claims.UploadAccount: Missmatch \n",
-                    "Old: " + oldAccount.toHex() + " vs. \n",
-                    "New: " + newAccount.toHex()
-                )
-                failed.push([key, value]);
-            }
-        } else {
-            console.log("ERROR Claims.UploadAccount: New update account not found...");
-            failed.push([key, value]);
-        }
-
-        checked += 1;
+    if (sourceAccount !== destAccount) {
+        console.error(
+            "ERROR Claims.UploadAccount: Mismatch \n",
+            "Source: " + sourceAccount + " \n",
+            "Destination: " + destAccount
+        );
+        return [[sourceKey, sourceAccountRaw]];
     }
 
-    return failed;
+    return [];
 }
 
 async function verifySystemAccount(
@@ -479,10 +462,6 @@ async function prepareClaims(
     for(let [palletStorageItemKey, values] of Array.from(keyValues)) {
         if (palletStorageItemKey === (xxhashAsHex("Claims", 128) + xxhashAsHex("ClaimedAmounts", 128).slice(2))) {
             xts.set(palletStorageItemKey, await prepareClaimsClaimedAmounts(toApi, values));
-
-        } else if (palletStorageItemKey === (xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2))) {
-            xts.set(palletStorageItemKey, await prepareClaimsRootHashes(toApi, values));
-
         } else if (palletStorageItemKey === (xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2))) {
             xts.set(palletStorageItemKey, await prepareClaimsUploadAccount(toApi, values));
 
@@ -521,41 +500,6 @@ async function prepareClaimsClaimedAmounts(
             }
         } else {
             return Promise.reject("Expected Claims.ClaimedAmounts storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
-        }
-    }
-
-    return xts;
-}
-
-async function prepareClaimsRootHashes(
-    toApi: ApiPromise,
-    values: StorageItem[]
-): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
-    let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
-    let packetOfKeyValues = new Array();
-    let maxKeyValues = 20;
-
-    let counter = 0;
-    for (const item of values) {
-        counter += 1;
-        if (item instanceof StorageMapValue) {
-            let key = Array.from(item.patriciaKey.toU8a(true));
-            let value = Array.from(item.value);
-            let keyValue = toApi.createType("(Vec<u8>, Vec<u8>)", [key, value]);
-
-            if (packetOfKeyValues.length === maxKeyValues - 1  || counter === values.length) {
-                // Push last element to the array
-                packetOfKeyValues.push(keyValue);
-
-                let packetOfkeyValues = toApi.createType("Vec<(Vec<u8>, Vec<u8>)>", packetOfKeyValues)
-                xts.push(toApi.tx.system.setStorage(packetOfkeyValues));
-
-                packetOfKeyValues = new Array();
-            } else {
-                packetOfKeyValues.push(keyValue);
-            }
-        } else {
-            return Promise.reject("Expected Claims.RootHashes storage values to be of type StorageMapValue. Got: " + JSON.stringify(item));
         }
     }
 
