@@ -5,8 +5,8 @@ and of different plugins.
 ## Setup
 These are optional but highly recommended steps
 
-* Install [nvm](https://github.com/nvm-sh/nvm) (*)
-* Run `nvm use` (*)
+* Install [nvm](https://github.com/nvm-sh/nvm)
+* Run `nvm use`
 
 ## Build
 All of the following commands must be run in the root directory of the repository.
