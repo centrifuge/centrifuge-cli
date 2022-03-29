@@ -1089,16 +1089,6 @@ export default class Crowdloan extends CliBaseCommand {
             const csv = file.split(/\r?\n/);
             this.logger.debug(csv);
 
-            for (const column of csv) {
-                let rows = column.split(',');
-                this.logger.debug(rows);
-
-                removals.push({
-                    name: rows[0].trim(),
-                    address: rows[1].trim(),
-                })
-            }
-
             const check = (value: Removals) => {
                 if(value.name === undefined) {
                     throw new Error("Invalid removal contributions parsed. Value is: " + value);
@@ -1108,8 +1098,21 @@ export default class Crowdloan extends CliBaseCommand {
                 }
             }
 
-            removals.forEach((contributor) => {
+            for (const column of csv) {
+                let rows = column.split(',');
+                this.logger.debug(rows);
+
+                let contributor: Removals = {
+                    name: rows[0].trim(),
+                    address: rows[1].trim(),
+                };
+
                 check(contributor);
+                removals.push(contributor)
+            }
+
+
+            removals.forEach((contributor) => {
                 this.logger.info("Contributor Removal:" + JSONbig.stringify(contributor))
                 let hexAddress;
                 try {
@@ -1136,7 +1139,7 @@ export default class Crowdloan extends CliBaseCommand {
                 }
             })
         } catch (err) {
-            return Promise.reject("Failed in removing contributors: \n" + err);
+            return Promise.reject("Failed to remove contributors: \n" + err);
         }
     }
 }
