@@ -91,7 +91,7 @@ export default class Migration extends CliBaseCommand {
             // Parse Credentials
             await this.parseCredentials(flags.creds);
 
-            console.log("Connecting to source chain: ", args["source-network"])
+            this.logger.info("Connecting to source chain: ", args["source-network"])
             const wsProviderFrom = new WsProvider(args["source-network"]);
             this.fromApi = await ApiPromise.create({
                 provider: wsProviderFrom,
@@ -102,7 +102,7 @@ export default class Migration extends CliBaseCommand {
                 }
             });
 
-            console.log("Connecting to destination network: ", args["destination-network"])
+            this.logger.info("Connecting to destination network: ", args["destination-network"])
             const wsProviderTo = new WsProvider(args["destination-network"]);
             this.toApi = await ApiPromise.create({
                 provider: wsProviderTo,
@@ -115,12 +115,12 @@ export default class Migration extends CliBaseCommand {
 
             // Get the latest block from the source chain
             const startFrom = (await this.fromApi.rpc.chain.getHeader()).hash
-            console.log("Starting migration from stand-alone chain block with hash " + startFrom);
+            this.logger.info("Starting migration from stand-alone chain block with hash " + startFrom);
             let atFrom = startFrom;
 
             if (flags["from-block"] != '-1') {
                 atFrom = await this.fromApi.rpc.chain.getBlockHash(flags["from-block"]);
-                console.log("Fetching storage from stand-alone chain block with hash " + atFrom);
+                this.logger.info("Fetching storage from stand-alone chain block with hash " + atFrom);
                 // Ensure that this block actually exists in the source chain
                 try {
                     await this.fromApi.rpc.chain.getBlock(atFrom);
@@ -131,7 +131,7 @@ export default class Migration extends CliBaseCommand {
             }
 
             const atTo = (await this.toApi.rpc.chain.getHeader()).hash;
-            console.log("Starting migration from parachain block with hash "  + atTo);
+            this.logger.info("Starting migration from parachain block with hash "  + atTo);
             // This will be used later for the summary
             let endTo: Hash;
             // The source and destination storage elements.
@@ -173,7 +173,7 @@ export default class Migration extends CliBaseCommand {
 
                         console.error("❌ The following extrinsics failed:\n" + msg);
                     } else {
-                        console.log("✅ Migration was successful.");
+                        this.logger.info("✅ Migration was successful.");
                     }
 
                     // Log extrinsics
@@ -192,13 +192,13 @@ export default class Migration extends CliBaseCommand {
                     }
 
                     endTo = (await this.toApi.rpc.chain.getHeader()).hash;
-                    console.log("Ending migration on destination chain at block hash" + endTo);
+                    this.logger.info("Ending migration on destination chain at block hash" + endTo);
                     await this.writeSummary(this.migrations, startFrom, atFrom, atTo, endTo);
                 }
             }
 
             if (flags.verify || flags['just-verify']) {
-                console.log("⌛ Verifying migration. This will take some time...");
+                this.logger.info("⌛ Verifying migration. This will take some time...");
 
                 let startFromHash: Hash;
                 let atFromHash: Hash;
@@ -246,9 +246,9 @@ export default class Migration extends CliBaseCommand {
                 );
 
                 if (inconsistentStorage.length === 0) {
-                    console.log("✅️ Migration has been verified successfully");
+                    this.logger.info("✅️ Migration has been verified successfully");
                 } else {
-                    console.log("❌ Migration failed for the following " + inconsistentStorage.length + "storage elements (source storage values):");
+                    this.logger.info("❌ Migration failed for the following " + inconsistentStorage.length + "storage elements (source storage values):");
                     let errMsg = inconsistentStorage.reduce((errMsg, [key, value]) => {
                         errMsg += "  Key: " + key + ", value: " + value + "\n";
                         return errMsg;
@@ -261,7 +261,7 @@ export default class Migration extends CliBaseCommand {
             await this.fromApi.disconnect();
             await this.toApi.disconnect();
 
-            console.log("👋 Done, bye now.");
+            this.logger.info("👋 Done, bye now.");
         } catch (err) {
             this.logger.error(err);
 
@@ -287,13 +287,13 @@ export default class Migration extends CliBaseCommand {
         const subDir = "Summaries";
         const filename = "migration-" + Date.now() + ".json";
         const json = JSONbig.stringify(summary, null, 2);
-        console.log("The following migration summary will be written to disk now: \n   "  + json);
+        this.logger.info("The following migration summary will be written to disk now: \n   "  + json);
 
         try {
             this.writeFile(json, filename, subDir);
-            console.log("✔️ Summary written to ", this.dirCommand + "/" + subDir + "/" + filename);
+            this.logger.info("✔️ Summary written to ", this.dirCommand + "/" + subDir + "/" + filename);
         } catch (err) {
-            console.log("❌ Failed to write the migration summary to disk:", err);
+            this.logger.info("❌ Failed to write the migration summary to disk:", err);
         }
     }
 

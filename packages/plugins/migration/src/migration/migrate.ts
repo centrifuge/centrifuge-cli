@@ -52,11 +52,6 @@ export async function verifyMigration(
             if(failed.length !== 0) {
                 failedVerification.push(...failed);
             }
-        } else if (destKey === xxhashAsHex("Claims", 128) + xxhashAsHex("RootHashes", 128).slice(2)){
-            let failed = await verifyClaimsRootHashes(sourceData, source.api, destData, destination.api);
-            if(failed.length !== 0) {
-                failedVerification.push(...failed);
-            }
         } else if (destKey === xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2)){
             let failed = await verifyClaimsUploadAccount(sourceData, source.api, destData, destination.api);
             if(failed.length !== 0) {
@@ -106,44 +101,6 @@ async function verifyClaimsClaimedAmounts(
             console.log("ERROR Claims.ClaimedAmounts: New claimed amount for account " + sourceKey.toHex() + " not found in the destination chain...");
             failed.push([sourceKey, sourceClaimedAmount]);
         }
-        checked += 1;
-    }
-
-    return failed;
-}
-
-async function verifyClaimsRootHashes(
-    oldData: Array<[StorageKey, Uint8Array]>,
-    oldApi: ApiPromise,
-    newData: Array<[StorageKey, Uint8Array]>,
-    newApi: ApiPromise
-): Promise<Array<[StorageKey, Uint8Array]>> {
-    let failed = new Array();
-
-    let newDataMap = newData.reduce(function (map, obj) {
-        map.set(obj[0].toHex(), obj[1]);
-        return map;
-    }, new Map<string, Uint8Array>());
-
-    let checked = 0;
-    for(let [key, value] of oldData) {
-        process.stdout.write("    Verifying:    "+ checked +"/ \r");
-
-        let newScale = newDataMap.get(key.toHex());
-        if (newScale !== undefined) {
-            if (newScale !== value) {
-                console.log(
-                    "ERROR Claims.RootHashes: Missmatch in boolean \n",
-                    "Old: " + newScale + " vs. \n",
-                    "New: " + value
-                )
-                failed.push([key, value]);
-            }
-        } else {
-            console.log("ERROR Claims.RootHashes: New root hash for old key of " + key.toHex() +" not found...");
-            failed.push([key, value]);
-        }
-
         checked += 1;
     }
 
