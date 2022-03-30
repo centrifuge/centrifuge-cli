@@ -343,7 +343,9 @@ async function verifyVestingVesting(
         } else {
             let newScale = newDataMap.get(key.toHex());
             if (newScale !== undefined) {
-                let newVestingInfo = oldApi.createType('VestingInfo', newScale);
+                // The new data type is a Vec of VestingInfo instead of just VestingInfo so
+                // we need to unwrap the first entry, which must be present.
+                let newVestingInfo = newApi.createType('Vec<VestingInfo>', newScale)[0];
 
                 const blockPeriodNewVesting = newVestingInfo.locked.toBigInt() / newVestingInfo.perBlock.toBigInt();
                 const blocksPassedSinceVestingStartNew = (atTo - newVestingInfo.startingBlock.toBigInt());
