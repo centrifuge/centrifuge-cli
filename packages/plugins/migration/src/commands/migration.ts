@@ -16,7 +16,8 @@ import {buildExtrinsics, migrate, verifyMigration} from "../migration/migrate";
 import {
     Credentials,
     Migrations,
-    MigrationSummary, toStorageElement
+    MigrationSummary,
+    toStorageElement
 } from "../migration/interfaces";
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
