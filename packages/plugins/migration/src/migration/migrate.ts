@@ -5,69 +5,148 @@ import {StorageItemElement, PalletElement, StorageElement, StorageItem, StorageV
 import {ApiTypes, SubmittableExtrinsic} from "@polkadot/api/types";
 import {KeyringPair} from "@polkadot/keyring/types";
 import {StorageKey} from "@polkadot/types";
-import {fork} from "../migration/fork";
+import {zippedFork} from "../migration/fork";
 import {compactAddLength} from "@polkadot/util"
 import {Dispatcher} from "@centrifuge-cli/dispatcher/dist/dispatcher";
+import {Migrations} from "./interfaces";
+
+interface ChainVerification {
+    api: ApiPromise,
+    startBlock: Hash,
+    endBlock: Hash
+}
 
 export async function verifyMigration(
-    toApi: ApiPromise,
-    fromApi: ApiPromise,
-    storageItems: Array<StorageElement>,
-    startTo: Hash,
-    atTo: Hash,
-    startFrom: Hash,
-    atFrom: Hash
+    migrations: Migrations,
+    source: ChainVerification,
+    destination: ChainVerification,
 ): Promise<Array<[StorageKey,  Uint8Array]>> {
-    const forkDataOld = await fork(fromApi, storageItems, atFrom);
-    const forkDataNew = await fork(toApi, storageItems, atTo);
+    const zipFork = await zippedFork(migrations, source.api, source.endBlock, destination.api, destination.endBlock);
+    const sourceStartBlockNumber = (await source.api.rpc.chain.getBlock(source.startBlock)).block.header.number.toBigInt();
+    const destinationStartBlockNumber = (await destination.api.rpc.chain.getBlock(destination.startBlock)).block.header.number.toBigInt();
+    let failedVerification = [];
 
-    const startToAsNum = (await toApi.rpc.chain.getBlock(startTo)).block.header.number.toBigInt();
-    const startFromAsNum = (await fromApi.rpc.chain.getBlock(startFrom)).block.header.number.toBigInt();
-
-    let failedVerification= new Array();
-
-    // create a good counter
-    let itemsToCheck = 0;
-    for (const [_key, data] of Array.from(forkDataOld)) {
-        itemsToCheck += data.length;
-    }
-    console.log("Starting verification of " + itemsToCheck + " migrated storage keys.");
-
-    process.stdout.write("    Verifying:    0/" + itemsToCheck + "\r");
-    for (const [key, oldData] of Array.from(forkDataOld)) {
-
-        let newData = forkDataNew.get(key);
-        if (newData === undefined){
-            failedVerification.push(...oldData);
-        } else {
-            if (key === xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2)) {
-                let failed = await verifySystemAccount(oldData, fromApi, newData, toApi);
-                if(failed.length !== 0) {
-                    failedVerification.push(...failed);
-                }
-            } else if (key === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)){
-                let failed = await verifyBalanceTotalIssuance(oldData, fromApi, newData, toApi, startToAsNum);
-                if(failed.length !== 0) {
-                    failedVerification.push(...failed);
-                }
-            } else if (key === xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2)){
-                let failed = await verifyVestingVesting(oldData, fromApi, newData, toApi, startFromAsNum, startToAsNum);
-                if(failed.length !== 0) {
-                    failedVerification.push(...failed);
-                }
-            } else if (key === xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2)){
-                let failed = await verifyProxyProxies(oldData, fromApi, newData, toApi);
-                if(failed.length !== 0) {
-                    failedVerification.push(...failed);
-                }
-            } else {
-                failedVerification.push(...oldData);
-                console.log("Some data from old could not be verified here...");
+    for (const [ [_sourceKey, sourceData], [destKey, destData]] of zipFork) {
+        if (destKey === xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2)) {
+            let failed = await verifySystemAccount(sourceData, source.api, destData, destination.api);
+            if (failed.length > 0) {
+                failedVerification.push(...failed);
             }
+        } else if (destKey === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)) {
+            let failed = await verifyBalanceTotalIssuance(sourceData, source.api, destData, destination.api, destinationStartBlockNumber);
+            if (failed.length !== 0) {
+                failedVerification.push(...failed);
+            }
+        } else if (destKey === xxhashAsHex("Vesting", 128) + xxhashAsHex("Vesting", 128).slice(2)) {
+            let failed = await verifyVestingVesting(sourceData, source.api, destData, destination.api, sourceStartBlockNumber, destinationStartBlockNumber);
+            if (failed.length > 0) {
+                failedVerification.push(...failed);
+            }
+        } else if (destKey === xxhashAsHex("Proxy", 128) + xxhashAsHex("Proxies", 128).slice(2)) {
+            let failed = await verifyProxyProxies(sourceData, source.api, destData, destination.api);
+            if (failed.length > 0) {
+                failedVerification.push(...failed);
+            }
+        } else if (destKey === xxhashAsHex("Claims", 128) + xxhashAsHex("ClaimedAmounts", 128).slice(2)){
+            let failed = await verifyClaimsClaimedAmounts(sourceData, source.api, destData, destination.api);
+            if(failed.length !== 0) {
+                failedVerification.push(...failed);
+            }
+        } else if (destKey === xxhashAsHex("Claims", 128) + xxhashAsHex("UploadAccount", 128).slice(2)){
+            let failed = await verifyClaimsUploadAccount(sourceData, source.api, destData, destination.api);
+            if(failed.length !== 0) {
+                failedVerification.push(...failed);
+            }
+        } else {
+            failedVerification.push(...sourceData);
+            console.log("Expected to verify data that we are not prepared to handle");
         }
     }
 
     return failedVerification;
+}
+
+async function verifyClaimsClaimedAmounts(
+    oldData: Array<[StorageKey, Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey, Uint8Array]>,
+    newApi: ApiPromise
+): Promise<Array<[StorageKey, Uint8Array]>> {
+    let failed = new Array();
+    let newDataMap = newData.reduce(function (map, [key, data]) {
+        let accountId = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+        map.set(accountId.toHex(), data);
+        return map;
+    }, new Map<string, Uint8Array>());
+
+    let checked = 0;
+    for(let [sourceKey, sourceClaimedAmount] of oldData) {
+        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+        let account = newApi.createType("AccountId", sourceKey.toU8a(true).slice(-32)).toHex();
+        let destClaimedAmount = newDataMap.get(account);
+
+        if (destClaimedAmount !== undefined) {
+            let sourceClaimedBalance = oldApi.createType('Balance', sourceClaimedAmount);
+            let destClaimedBalance = newApi.createType('Balance', destClaimedAmount);
+
+            if (destClaimedBalance.toBigInt() !== sourceClaimedBalance.toBigInt()) {
+                console.log(
+                    "ERROR Claims.ClaimedAmounts: Mismatch for account" + account + "\n",
+                    "Amount in source: " + sourceClaimedBalance.toBigInt() + "\n",
+                    "Amount in destination: " + destClaimedBalance.toBigInt()
+                )
+                failed.push([sourceKey, sourceClaimedAmount]);
+            }
+        } else {
+            console.log("ERROR Claims.ClaimedAmounts: New claimed amount for account " + sourceKey.toHex() + " not found in the destination chain...");
+            failed.push([sourceKey, sourceClaimedAmount]);
+        }
+        checked += 1;
+    }
+
+    return failed;
+}
+
+async function verifyClaimsUploadAccount(
+    oldData: Array<[StorageKey, Uint8Array]>,
+    oldApi: ApiPromise,
+    newData: Array<[StorageKey, Uint8Array]>,
+    newApi: ApiPromise
+): Promise<Array<[StorageKey, Uint8Array]>> {
+    let failed = new Array();
+
+    let newDataMap = newData.reduce(function (map, obj) {
+        map.set(obj[0].toHex(), obj[1]);
+        return map;
+    }, new Map<string, Uint8Array>());
+
+    let checked = 0;
+    for(let [key, value] of oldData) {
+        process.stdout.write("    Verifying:    "+ checked +"/ \r");
+
+        let oldAccount = oldApi.createType('AccountId', value);
+
+        let newScale = newDataMap.get(key.toHex());
+        if (newScale !== undefined) {
+            let newAccount = newApi.createType('AccountId', newScale);
+
+            if (oldAccount.toHex() !== newAccount.toHex()) {
+                console.log(
+                    "ERROR Claims.UploadAccount: Missmatch \n",
+                    "Old: " + oldAccount.toHex() + " vs. \n",
+                    "New: " + newAccount.toHex()
+                )
+                failed.push([key, value]);
+            }
+        } else {
+            console.log("ERROR Claims.UploadAccount: New update account not found...");
+            failed.push([key, value]);
+        }
+
+        checked += 1;
+    }
+
+    return failed;
 }
 
 async function verifySystemAccount(
@@ -302,73 +381,72 @@ async function verifyVestingVesting(
 }
 
 
-export async function prepareMigrate(
-    transformedData: Map<string, Map<string, Array<StorageItem>>>,
+// Build the extrinsics that will have the data inserted in the destination chain.
+export async function buildExtrinsics(
+    // The data in the schema accepted by the destination chain
+    destData: Map<string, Map<string, Array<StorageItem>>>,
     fromApi: ApiPromise,
     toApi: ApiPromise,
 ): Promise<Map<string, Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>>> {
-    let migrationXts: Map<string, Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> = new Map();
+    let extrinsics: Map<string, Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>> = new Map();
 
     // For every prefix do the correct transformation.
-    for (let [prefix, keyValues] of Array.from(transformedData)) {
+    for (let [prefix, keyValues] of Array.from(destData)) {
         // Match all prefixes we want to transform
         if (prefix.startsWith(xxhashAsHex("System", 128))) {
             let migratedPalletStorageItems = await prepareSystem(toApi, keyValues);
-            migrationXts.set(prefix, migratedPalletStorageItems)
+            extrinsics.set(prefix, migratedPalletStorageItems)
 
         } else if (prefix.startsWith(xxhashAsHex("Balances", 128))) {
             let migratedPalletStorageItems = await prepareBalances(toApi, keyValues);
-            migrationXts.set(prefix, migratedPalletStorageItems)
+            extrinsics.set(prefix, migratedPalletStorageItems)
 
         } else if (prefix.startsWith(xxhashAsHex("Vesting", 128))) {
             let migratedPalletStorageItems = await prepareVesting(toApi, keyValues);
-            migrationXts.set(prefix, migratedPalletStorageItems)
+            extrinsics.set(prefix, migratedPalletStorageItems)
 
         } else if (prefix.startsWith(xxhashAsHex("Proxy", 128))) {
             let migratedPalletStorageItems = await prepareProxy(toApi, keyValues);
-            migrationXts.set(prefix, migratedPalletStorageItems)
+            extrinsics.set(prefix, migratedPalletStorageItems)
 
         } else {
             return Promise.reject("Fetched data that can not be migrated. PatriciaKey is: " + prefix);
         }
     }
 
-    return migrationXts;
+    return extrinsics;
 }
 
+// Run the migration by applying the given `extrinsics` in the order defined by `elements`.
 export async function migrate(
+    extrinsics: Map<string, Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>>,
+    elements: Array<StorageElement>,
     toApi: ApiPromise,
-    executor: KeyringPair,
-    sequence: Array<StorageElement>,
-    data: Map<string, Map<string, Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>>>,
+    keyPair: KeyringPair,
     cbErr: (failed: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>) => void
 ) : Promise<Array<[Hash, bigint]>>
 {
-    const { nonce } = await toApi.query.system.account(executor.address);
-
-    let dispatcher = new Dispatcher(toApi, executor, nonce.toBigInt(), cbErr, 5, 50);
-
+    const { nonce } = await toApi.query.system.account(keyPair.address);
+    let dispatcher = new Dispatcher(toApi, keyPair, nonce.toBigInt(), cbErr, 5, 50);
     let dispatchables: Array<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> = new Array();
 
-    for (const one of sequence) {
-        if (one instanceof PalletElement) {
-            let palletData = data.get(one.palletHash);
-            if (palletData !== undefined) {
-                for(const [key, data] of Array.from(palletData)) {
-                    dispatchables.push(data);
-                }
-            } else {
-                return Promise.reject("Sequence element was NOT part of transformation. Pallet: " + one.pallet);
+    for (const element of elements) {
+        if (element instanceof PalletElement) {
+            let palletData = extrinsics.get(element.palletHash);
+            if (palletData === undefined) {
+                return Promise.reject("Sequence element was NOT part of transformation. Pallet: " + element.pallet);
             }
 
-        } else if (one instanceof StorageItemElement) {
-            let storageItemData = data.get(one.palletHash)?.get(one.key)
-
-            if (storageItemData !== undefined) {
-                dispatchables.push(storageItemData);
-            } else {
-                return Promise.reject("Sequence element was NOT part of transformation. Pallet: " + one.pallet + ", Item: " + one.item);
+            for (const [_key, data] of Array.from(palletData)) {
+                dispatchables.push(data);
             }
+        } else if (element instanceof StorageItemElement) {
+            let storageItemData = extrinsics.get(element.palletHash)?.get(element.key)
+            if (storageItemData === undefined) {
+                return Promise.reject("Sequence element was NOT part of transformation. Pallet: " + element.pallet + ", Item: " + element.item);
+            }
+
+            dispatchables.push(storageItemData);
         } else {
             return Promise.reject("Unreachable Code. qed.");
         }
@@ -425,12 +503,9 @@ async function prepareProxyProxies(
     values: StorageItem[]
 ): Promise<Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>>> {
     let xts: Array<SubmittableExtrinsic<ApiTypes, SubmittableResult>> = new Array();
-
     let packetOfProxies: Array<[AccountId, Balance,  Uint8Array]> = new Array();
-
     // @ts-ignore
     const maxProxiesOnChain = toApi.consts.migration.migrationMaxProxies.toNumber();
-
     // For safety reasons we reduce 1/3 of the max amount here
     const maxProxies = Math.round(maxProxiesOnChain - ((1/3) * maxProxiesOnChain));
 

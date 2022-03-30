@@ -1,30 +1,36 @@
+import {PalletElement, StorageElement, StorageItemElement} from "./common";
+
 export interface Credentials {
     rawSeed: string
 }
 
-export interface Config {
-    modules: Array<ModuleConfig>,
-    sequence: Array<SequenceConfig>,
+// All migrations to be executed in the exact order defined in the array.
+export type Migrations = Array<Migration>;
+
+// A migration, i.e, a type capturing the migratable item in the source and in the destination chain.
+// For example, { source: (RadClaims, AccountBalances), destination: (Claims, ClaimedAmounts) }.
+export interface Migration {
+    // The source storage item
+    source: StorageItem,
+    // The destination storage item
+    destination: StorageItem
 }
 
-export interface ModuleConfig {
-    name: string,
-    item: StorageItemConfig | undefined,
+// A Pallet Storage item, e.g. `{ pallet: "Balances", item: "TotalIssuance" }`
+export interface StorageItem {
+    // The name of the pallet
+    pallet: string;
+    // The name of the storage item
+    item: string;
 }
 
-export interface StorageItemConfig {
-    name: string
+export function toStorageElement(x: StorageItem): StorageElement {
+    return new StorageItemElement(x.pallet, x.item)
 }
 
-export interface MigrationStats {
+export interface MigrationSummary {
     fromFetchedAt: bigint,
     fromStartedAt: bigint,
     toStartedAt: bigint
     toEndAt: bigint,
-    modules: Array<SequenceConfig>,
-}
-
-export interface SequenceConfig {
-    name: string,
-    item: string,
 }

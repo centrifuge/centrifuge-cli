@@ -1,15 +1,46 @@
 import {ApiPromise} from "@polkadot/api";
 import {StorageKey} from "@polkadot/types";
 import {Hash } from "@polkadot/types/interfaces";
-
 import { StorageElement} from "../migration/common";
+import {Migrations, toStorageElement} from "./interfaces";
 
-export async function fork(api: ApiPromise, storageItems: Array<StorageElement>, at: Hash): Promise<Map<string, Array<[ StorageKey, Uint8Array ]>>>   {
+// ForkedData is a map of key (high-level storage key) to the content of said storage.
+// A high-level example would be: [Claims.ClaimedAmounts, [ [0x123, 42] ]
+type ForkedData = [string, Array<[ StorageKey, Uint8Array ]>];
+
+// Zip the source and destination's state side-by-side for each migration item.
+// For example, we can request to have the `RadClaims.AccountBalances` state from
+// the standalone chain side-by-side the `Claims.ClaimedAmounts` from the parachain.
+export async function zippedFork(
+    migrations: Migrations,
+    sourceApi: ApiPromise,
+    sourceBlock: Hash,
+    destApi: ApiPromise,
+    destBlock: Hash
+): Promise<Array<[ForkedData, ForkedData]>> {
+    let zip: Array<[ForkedData, ForkedData]> = [];
+
+    for (const m of migrations) {
+        const sourceElement = toStorageElement(m.source);
+        const sourceFork: ForkedData =
+            [sourceElement.key, await fetchState(sourceApi, sourceBlock, sourceApi.createType("StorageKey", sourceElement.key))];
+
+        const destElement = toStorageElement(m.destination);
+        const destFork: ForkedData
+            = [destElement.key, await fetchState(destApi, destBlock, destApi.createType("StorageKey", destElement.key))];
+
+        zip.push([sourceFork, destFork]);
+    }
+
+    return zip;
+}
+
+// Fork the `storageItems` from the given `api` at the given `block`
+export async function fork(api: ApiPromise, storageItems: Array<StorageElement>, block: Hash): Promise<Map<string, Array<[ StorageKey, Uint8Array ]>>>   {
     let state: Map<string, Array<[ StorageKey, Uint8Array ]>> = new Map();
 
     for (const element of storageItems) {
-        let data = await fetchState(api, at, api.createType("StorageKey", element.key));
-
+        let data = await fetchState(api, block, api.createType("StorageKey", element.key));
         state.set(element.key, data);
     }
 
