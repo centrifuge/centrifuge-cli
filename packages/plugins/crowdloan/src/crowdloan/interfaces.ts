@@ -88,3 +88,8 @@ export interface Additionals {
     address: AccountId,
     amount: Balance
 }
+
+export interface Removals {
+    name: String,
+    address: AccountId
+}
