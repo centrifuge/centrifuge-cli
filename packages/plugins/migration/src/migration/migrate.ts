@@ -323,8 +323,8 @@ async function verifyVestingVesting(
 ): Promise<Array<[StorageKey,  Uint8Array]>> {
     let failed = new Array();
 
-    let newDataMap = newData.reduce(function (map, obj) {
-        map.set(obj[0].toHex(), obj[1]);
+    let newDataMap = newData.reduce(function (map, [key, value]) {
+        map.set(key.toHex(), value);
         return map;
     }, new Map<string, Uint8Array>());
 
@@ -333,7 +333,6 @@ async function verifyVestingVesting(
         process.stdout.write("    Verifying:    "+ checked +"/ \r");
 
         let oldVestingInfo = oldApi.createType('VestingInfo', value);
-
         const blockPeriodOldVesting = (oldVestingInfo.locked.toBigInt() / oldVestingInfo.perBlock.toBigInt());
         const blocksPassedSinceVestingStart = (atFrom - oldVestingInfo.startingBlock.toBigInt());
         const remainingBlocksVestingOld = blockPeriodOldVesting - blocksPassedSinceVestingStart;
@@ -342,27 +341,29 @@ async function verifyVestingVesting(
             // Vesting has passed, the chain will resolve this directly upon our inserts.
         } else {
             let newScale = newDataMap.get(key.toHex());
-            if (newScale !== undefined) {
-                let newVestingInfo = oldApi.createType('VestingInfo', newScale);
+            let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
+            let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
+
+            if (newScale === undefined) {
+                console.log("ERROR: Could not find associated VestingInfo on new chain for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
+                failed.push([key, value]);
+            }
+            else {
+                let newVestingInfo = newApi.createType('VestingInfo', newScale);
 
                 const blockPeriodNewVesting = newVestingInfo.locked.toBigInt() / newVestingInfo.perBlock.toBigInt();
                 const blocksPassedSinceVestingStartNew = (atTo - newVestingInfo.startingBlock.toBigInt());
                 const remainingBlocksVestingNew = blockPeriodNewVesting - blocksPassedSinceVestingStartNew;
                 const nullOrOne = remainingBlocksVestingOld - (remainingBlocksVestingNew * BigInt(2));
+                const absDiff = nullOrOne > 0 ? nullOrOne : nullOrOne * BigInt(-1);
 
                 // Due to the arithmetics we accept if a vesting is off by 2 blocks in each direction.
-                if (!(BigInt(-2)  <= nullOrOne &&  nullOrOne <= BigInt(2))) {
-                    let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
-                    let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
+                if (absDiff > 2) {
                     console.log("ERROR: Remaining blocks for vesting are not equal...\n   Old: " +remainingBlocksVestingOld +" vs. New: "+remainingBlocksVestingNew*BigInt(2)+"\n    for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
                      failed.push([key, value]);
+                     // TODO(nuno): delete the line below once debugging is over
+                     process.exit(33);
                 }
-
-            } else {
-                let newAccount = newApi.createType("AccountId", key.toU8a(true).slice(-32));
-                let oldAccount = oldApi.createType("AccountId", key.toU8a(true).slice(-32));
-                console.log("ERROR: Could not find associated VestingInfo on new chain for account new " + newAccount.toHuman() + " account old " + oldAccount.toHuman());
-                failed.push([key, value]);
             }
         }
 
