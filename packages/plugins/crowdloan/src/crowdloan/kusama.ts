@@ -1,11 +1,7 @@
 import {ApiPromise} from "@polkadot/api";
-import {CrowdloanSpec, KusamaTransformConfig, AccountId, Balance} from "./interfaces";
+import {CrowdloanSpec, KusamaTransformConfig, AccountId, Balance, SqlConfig} from "./interfaces";
 import Crowdloan from "../commands/crowdloan";
 import {Logger as TsLogger} from 'tslog';
-import {BigNumber} from 'bignumber.js'
-import {BIT_SIGNED} from "@polkadot/types/extrinsic/constants";
-import ownKeys = Reflect.ownKeys;
-import {Configuration} from "ts-postgres";
 import {encodeAddress} from "@polkadot/keyring";
 import '@polkadot/api-augment'
 
@@ -16,7 +12,7 @@ export async function getContributions(
     crowdloans: Array<CrowdloanSpec>,
     config: KusamaTransformConfig,
     logger: TsLogger,
-    sqlConfig: Configuration
+    sqlConfig: SqlConfig
 ): Promise<Map<AccountId, Balance>> {
     // Try fetching from web
     let contributors:  Map<string, Array<Contributor>>;
@@ -75,7 +71,7 @@ async function transformIntoRewardee(
     api: ApiPromise,
     config: KusamaTransformConfig,
     contributors: Map<string, Array<Contributor>>,
-    sqlConfig: Configuration,
+    sqlConfig: SqlConfig,
     logger: TsLogger
 ): Promise<Map<AccountId, Balance>> {
     let rewardees: Map<string, bigint> = new Map();

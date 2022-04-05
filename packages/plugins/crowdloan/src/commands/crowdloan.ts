@@ -5,13 +5,13 @@ import {EventRecord, Extrinsic, Hash} from "@polkadot/types/interfaces";
 import {KeyringPair} from "@polkadot/keyring/types";
 import { blake2AsHex } from "@polkadot/util-crypto";
 import {decodeAddress, encodeAddress} from "@polkadot/keyring";
-import { Client, Configuration } from 'ts-postgres';
 import * as fs from "fs";
 import {cryptoWaitReady} from "@polkadot/util-crypto"
 import {getContributions as getContributionsKusama} from "../crowdloan/kusama";
 import {getContributions as getContributionsPolkadot} from "../crowdloan/polkadot";
 import { parse } from 'csv-parse';
 import '@polkadot/api-augment'
+const { Pool, Client } = require('pg')
 
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
@@ -32,7 +32,7 @@ import {
     Credentials,
     Proof,
     Signature, Contribution,
-    Balance, AccountId, Additionals, Removals
+    Balance, AccountId, Additionals, Removals, SqlConfig
 } from "../crowdloan/interfaces";
 import {RegistryTypes} from "@polkadot/types/types";
 
@@ -49,7 +49,7 @@ export default class Crowdloan extends CliBaseCommand {
     // The account that will initialize the pallets and also fund the reward pallet (sudo account)
     executor!: KeyringPair
 
-    sqlCfg!: Configuration
+    sqlCfg!: SqlConfig
 
     static description = 'Centrifuge cli command that allows to fetch crowdloan contributions from a relay chain and initialize ' +
         'the crowdloan modules on the parachain'
@@ -214,7 +214,9 @@ export default class Crowdloan extends CliBaseCommand {
 
             this.exit(2);
         }
+
         this.logger.info("Crowdloan command finished.");
+        this.exit(0);
         return;
     }
 
@@ -778,48 +780,29 @@ export default class Crowdloan extends CliBaseCommand {
         }
     }
 
-    static async fetchAddressCodesSets(table: string, sqlCfg: Configuration): Promise<Map<string, Array<string>>> {
+    static async fetchCodeAddressPairs(table: string, sqlCfg: SqlConfig): Promise<Map<string, string>> {
         let data = new Map();
 
-        const client = new Client(sqlCfg);
-        await client.connect();
+        const client = new Client({
+            user: sqlCfg.user,
+            host: sqlCfg.host,
+            database: sqlCfg.database,
+            password: sqlCfg.password,
+            port: sqlCfg.port,
+        })
+        await client.connect()
 
-        const results = client.query(`
+        try {
+
+        const results = await client.query(`
            SELECT wallet_address, referral_code FROM ${table} 
         `);
 
-        for await (const row of results) {
-            // @ts-ignore
-            const addressSS58: string = row.data[0];
+        for await (const row of results.rows) {
+            const addressSS58: string = row.wallet_address;
             const decoded = decodeAddress(addressSS58);
             const address = '0x' + hexEncode(decoded);
-            // @ts-ignore
-            const code: string = row.data[1];
-
-            data.has(address) ? data.get(address).push(code) : data.set(address, Array.from([code]));
-        }
-
-        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
-        return data;
-    }
-
-    static async fetchCodeAddressPairs(table: string, sqlCfg: Configuration): Promise<Map<string, string>> {
-        let data = new Map();
-
-        const client = new Client(sqlCfg);
-        await client.connect();
-
-        const results = client.query(`
-           SELECT wallet_address, referral_code FROM ${table} 
-        `);
-
-        for await (const row of results) {
-            // @ts-ignore
-            const addressSS58: string = row.data[0];
-            const decoded = decodeAddress(addressSS58);
-            const address = '0x' + hexEncode(decoded);
-            // @ts-ignore
-            const code: string = row.data[1];
+            const code: string = row.referral_code;
 
             if (data.has(code)) {
                 return Promise.reject("Inconsistent DB. Double code value")
@@ -827,56 +810,17 @@ export default class Crowdloan extends CliBaseCommand {
                 data.set(code, address);
             }
         }
+        } catch (err) {
+            return Promise.reject("Failed fetching referal codes. Err: " + err);
+        }
 
-        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
+        try {
+            await client.end()
+        } catch (err) {
+            console.log("Disconnecting from sql-db failed with: " + err);
+        }
+
         return data;
-    }
-
-    static async fetchAddressFromCode(code: string, table: string, sqlCfg: Configuration): Promise<string | undefined> {
-        const client = new Client(sqlCfg);
-        await client.connect();
-
-        if (code === "") {
-            return;
-        }
-
-        const results = client.query(`
-            SELECT wallet_address FROM ${table} WHERE referral_code='${code}'
-        `);
-
-        let addressSS58: string | undefined;
-        for await (const row of results) {
-            // @ts-ignore
-            addressSS58 = row.data[0];
-        }
-
-        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
-        return addressSS58 === undefined ? undefined : '0x' + hexEncode(decodeAddress(addressSS58));
-    }
-
-    static async fetchCodesFromAddress(address: string, table: string, ss58format: number, sqlCfg: Configuration): Promise<Array<string> | undefined> {
-        const client = new Client(sqlCfg);
-        await client.connect();
-
-        if (address === "") {
-            return;
-        }
-
-        const addressSS58 = encodeAddress(address, ss58format);
-
-        const results = client.query(`
-            SELECT referral_code FROM ${table} WHERE wallet_address='${addressSS58}'
-        `);
-
-        client.end().then((info) => console.log("Disconnected from sql-db. Info: " + info)).catch((err) => console.error(err));
-
-        let codes: Array<string> = [];
-        for await (const row of results) {
-            // @ts-ignore
-            codes.push(row.data[0]);
-        }
-
-        return codes;
     }
 
     private async generateContributions(): Promise<Map<AccountId, Balance>> {

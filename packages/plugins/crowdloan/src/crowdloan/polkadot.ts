@@ -1,13 +1,8 @@
 import {ApiPromise} from "@polkadot/api";
-import {CrowdloanSpec, PolkadotTransformConfig, AccountId, Balance} from "./interfaces";
+import {CrowdloanSpec, PolkadotTransformConfig, AccountId, Balance, SqlConfig} from "./interfaces";
 import Crowdloan from "../commands/crowdloan";
 import {Logger as TsLogger} from 'tslog';
-import {BigNumber} from 'bignumber.js'
-import {BIT_SIGNED} from "@polkadot/types/extrinsic/constants";
-import ownKeys = Reflect.ownKeys;
-import {Configuration} from "ts-postgres";
 import {encodeAddress} from "@polkadot/keyring";
-import {Logger} from "@centrifuge-cli/core/dist/logger";
 import '@polkadot/api-augment'
 
 const axios = require('axios').default;
@@ -17,7 +12,7 @@ export async function getContributions(
     crowdloans: Array<CrowdloanSpec>,
     config: PolkadotTransformConfig,
     logger: TsLogger,
-    sqlConfig: Configuration
+    sqlConfig: SqlConfig
 ): Promise<Map<AccountId, Balance>> {
     // Try fetching from web
     let contributors:  Map<string, Array<Contributor>>;
@@ -119,7 +114,7 @@ async function transformIntoRewardee(
     api: ApiPromise,
     config: PolkadotTransformConfig,
     contributors: Map<string, Array<Contributor>>,
-    sqlConfig: Configuration,
+    sqlConfig: SqlConfig,
     logger: TsLogger
 ): Promise<Map<AccountId, Balance>> {
     let rewardees: Map<string, bigint> = new Map();
