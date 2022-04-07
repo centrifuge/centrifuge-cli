@@ -33,15 +33,17 @@ export async function verifyMigration(
     const sourceStartBlockNumber = (await source.api.rpc.chain.getBlock(source.startBlock)).block.header.number.toBigInt();
     const destinationStartBlockNumber = (await destination.api.rpc.chain.getBlock(destination.startBlock)).block.header.number.toBigInt();
     let failedVerification = [];
+    let totalBalanceOfAccounts = source.api.createType('Balance', 0).toBigInt();
 
     for (const [ [_sourceKey, sourceData], [destKey, destData]] of zipFork) {
         if (destKey === xxhashAsHex("System", 128) + xxhashAsHex("Account", 128).slice(2)) {
-            let failed = await verifySystemAccount(sourceData, source.api, destData, destination.api);
+            let [failed, totalAccountBalance] = await verifySystemAccount(sourceData, source.api, destData, destination.api);
+            totalBalanceOfAccounts += totalAccountBalance;
             if (failed.length > 0) {
                 failedVerification.push(...failed);
             }
         } else if (destKey === xxhashAsHex("Balances", 128) + xxhashAsHex("TotalIssuance", 128).slice(2)) {
-            let failed = await verifyBalanceTotalIssuance(sourceData, source.api, destData, destination.api, destinationStartBlockNumber);
+            let failed = await verifyBalanceTotalIssuance(sourceData, source.api, destData, destination.api, destinationStartBlockNumber, totalBalanceOfAccounts);
             if (failed.length !== 0) {
                 failedVerification.push(...failed);
             }
@@ -146,8 +148,9 @@ async function verifySystemAccount(
     oldApi: ApiPromise,
     newData: Array<[StorageKey, Uint8Array]>,
     newApi: ApiPromise
-): Promise<Array<[StorageKey, Uint8Array]>> {
+): Promise<[Array<[StorageKey, Uint8Array]>, bigint]> {
     let failed = new Array();
+    let totalAccountBalance = oldApi.createType('Balance', 0).toBigInt();
 
     let newDataMap = newData.reduce(function (map, obj) {
         map.set(obj[0].toHex(), obj[1]);
@@ -187,7 +190,12 @@ async function verifySystemAccount(
         checked += 1;
     }
 
-    return failed;
+    for (let [key, value] of newData) {
+        let newAccount = oldApi.createType('AccountInfo', value);
+        totalAccountBalance += newAccount.data.free.toBigInt() + newAccount.data.reserved.toBigInt();
+    }
+
+    return [failed, totalAccountBalance];
 }
 
 async function verifyBalanceTotalIssuance(
@@ -195,8 +203,9 @@ async function verifyBalanceTotalIssuance(
     oldApi: ApiPromise,
     newData: Array<[StorageKey,  Uint8Array]>,
     newApi: ApiPromise,
-    migrationStartBlock: bigint
-): Promise<Array<[StorageKey,  Uint8Array]>> {
+    migrationStartBlock: bigint,
+    totalBalanceOfAccounts: bigint
+): Promise<Array<[StorageKey, Uint8Array]>> {
     let failed = new Array();
 
     let newDataMap = newData.reduce(function (map, obj) {
@@ -221,6 +230,11 @@ async function verifyBalanceTotalIssuance(
 
             if (oldIssuance.toBigInt() !== (newIssuance.toBigInt() - issuanceBeforeMigration.toBigInt())) {
                 console.log("ERROR ISSUANCE: New total issuance does not match. \n   Old: " + oldIssuance.toHuman() + " vs. New: " + (newIssuance.toHuman()));
+                failed.push([key, value]);
+            }
+
+            if (totalBalanceOfAccounts !== newIssuance.toBigInt()) {
+                console.log("ERROR ISSUANCE: New total issuance does not match the one of the migrated accounts. \n   TotalIssuance: " + newIssuance.toBigInt() + " vs. Account: " + totalBalanceOfAccounts);
                 failed.push([key, value]);
             }
 
