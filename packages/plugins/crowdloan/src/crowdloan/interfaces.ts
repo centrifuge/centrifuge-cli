@@ -1,5 +1,3 @@
-import {Configuration} from "ts-postgres";
-
 export type AccountId = string;
 export type Balance = bigint;
 
@@ -58,7 +56,7 @@ export interface KusamaTransformConfig {
 
 export interface Credentials {
     executorURI: string
-    sqlCfg: Configuration,
+    sqlCfg: SqlConfig,
 }
 
 export interface MerkleTree {
@@ -92,4 +90,12 @@ export interface Additionals {
 export interface Removals {
     name: String,
     address: AccountId
+}
+
+export interface SqlConfig {
+    user: String,
+    host:  String,
+    database:  String,
+    password:  String,
+    port: String,
 }
