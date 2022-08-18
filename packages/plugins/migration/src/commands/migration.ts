@@ -20,6 +20,7 @@ import {
     toStorageElement
 } from "../migration/interfaces";
 
+const avnTypes = require('avn-types');
 const JSONbig = require('json-bigint')({ useNativeBigInt: true, alwaysParseAsBig: true });
 
 export default class Migration extends CliBaseCommand {
@@ -96,11 +97,7 @@ export default class Migration extends CliBaseCommand {
             const wsProviderFrom = new WsProvider(args["source-network"]);
             this.fromApi = await ApiPromise.create({
                 provider: wsProviderFrom,
-                types: {
-                    ProxyType: {
-                        _enum: ['Any', 'NonTransfer', 'Governance', 'Staking', 'Vesting']
-                    }
-                }
+                typesBundle: avnTypes,
             });
 
             this.logger.info("Connecting to destination network: ", args["destination-network"])

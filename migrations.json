@@ -1,0 +1,26 @@
+[
+    {
+        "source":
+        {
+            "pallet": "Balances",
+            "item": "TotalIssuance"
+        }
+    ,
+    "destination":
+        {
+            "pallet": "Balances",
+            "item": "TotalIssuance"
+        }
+    },
+    {
+        "source":{
+            "pallet": "System",
+            "item": "Account"
+        },
+        "destination":{
+            "pallet": "System",
+            "item": "Account"
+        }
+
+    }
+]
